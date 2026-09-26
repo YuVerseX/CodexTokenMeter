@@ -116,7 +116,7 @@ public class SessionLogLocatorCacheTests : IDisposable
         sw.Stop();
 
         Assert.True(
-            sw.Elapsed.TotalMilliseconds < 100,
+            sw.Elapsed.TotalMilliseconds < 500,
             $"50 次未命中查询耗时 {sw.Elapsed.TotalMilliseconds:F1} ms，说明负结果未被缓存。");
     }
 

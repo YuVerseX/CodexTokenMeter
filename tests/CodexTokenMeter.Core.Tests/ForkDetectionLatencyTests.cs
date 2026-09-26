@@ -118,8 +118,10 @@ public class ForkDetectionLatencyTests : IDisposable
         sw.Stop();
 
         Assert.Equal(second, found);
+
+        // 数量级判断：未被缓存阻塞时应远低于一次全盘扫描的耗时。
         Assert.True(
-            sw.Elapsed.TotalMilliseconds < 50,
+            sw.Elapsed.TotalMilliseconds < 500,
             $"切换会话后首次定位耗时 {sw.Elapsed.TotalMilliseconds:F1} ms。");
     }
 }

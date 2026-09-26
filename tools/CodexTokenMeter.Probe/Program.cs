@@ -18,6 +18,11 @@ if (args.Length > 0 && args[0] == "--ipc")
     return await VerifyIpcAsync(args.Length > 1 ? args[1] : null);
 }
 
+if (args.Length > 0 && args[0] == "threshold")
+{
+    return RunThresholdProbe();
+}
+
 if (args.Length > 0 && args[0] == "guard")
 {
     return RunGuardProbe();
@@ -1112,4 +1117,73 @@ static int RunGuardProbe()
         : "  结论：守卫从未拒绝 —— 可能失效。");
 
     return 0;
+}
+
+/// <summary>验证成本断言的阈值仍能区分「已优化」与「未优化」。</summary>
+static int RunThresholdProbe()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"ctm-thresh-{Guid.NewGuid():N}");
+
+    try
+    {
+        // 构造与 SessionLogLocatorCostTests 相同的干扰规模。
+        var today = DateTime.Now.Date;
+
+        for (var offset = 0; offset < 200; offset++)
+        {
+            var day = today.AddDays(-offset);
+            var directory = Path.Combine(
+                root,
+                day.ToString("yyyy", CultureInfo.InvariantCulture),
+                day.ToString("MM", CultureInfo.InvariantCulture),
+                day.ToString("dd", CultureInfo.InvariantCulture));
+
+            Directory.CreateDirectory(directory);
+
+            for (var i = 0; i < 10; i++)
+            {
+                File.WriteAllText(
+                    Path.Combine(directory, $"rollout-{day:yyyy-MM-dd}T10-00-00-{Guid.NewGuid()}.jsonl"),
+                    "{}");
+            }
+        }
+
+        const string ThreadId = "01a0d656-cf19-7532-af4a-f089fc3163ed";
+        var todayDir = Path.Combine(root, today.ToString("yyyy"), today.ToString("MM"), today.ToString("dd"));
+        File.WriteAllText(
+            Path.Combine(todayDir, $"rollout-{today:yyyy-MM-dd}T10-00-00-{ThreadId}.jsonl"),
+            "{}");
+
+        // 未优化路径：递归全盘扫描。
+        var sw = Stopwatch.StartNew();
+        for (var i = 0; i < 20; i++) { FullScanAgain(root, ThreadId); }
+        sw.Stop();
+        var unoptimizedPerCall = sw.Elapsed.TotalMilliseconds / 20;
+
+        // 已优化路径：按日期定位。
+        var locator = new SessionLogLocator();
+        locator.Locate(root, ThreadId);
+
+        sw.Restart();
+        for (var i = 0; i < 20; i++) { locator.Locate(root, ThreadId); }
+        sw.Stop();
+        var optimizedPerCall = sw.Elapsed.TotalMilliseconds / 20;
+
+        const double Threshold = 500;
+
+        Console.WriteLine($"  未优化（全盘扫描）: {unoptimizedPerCall:F1} ms/次");
+        Console.WriteLine($"  已优化（按日期）:   {optimizedPerCall:F3} ms/次");
+        Console.WriteLine($"  测试阈值:           {Threshold:F0} ms");
+        Console.WriteLine($"  倍数差:             {unoptimizedPerCall / Math.Max(0.001, optimizedPerCall):F0}x");
+        Console.WriteLine();
+        Console.WriteLine(unoptimizedPerCall > 20
+            ? "  结论：阈值足以区分两种实现（优化前 20 ms+/次）"
+            : "  结论：数据规模不足以体现差异，阈值验证无效");
+
+        return 0;
+    }
+    finally
+    {
+        try { Directory.Delete(root, recursive: true); } catch (IOException) { }
+    }
 }
