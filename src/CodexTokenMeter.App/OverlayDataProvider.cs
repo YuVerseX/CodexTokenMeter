@@ -164,9 +164,12 @@ public sealed class OverlayDataProvider : IDisposable
     /// </summary>
     public void Poll()
     {
-        if (_disposed)
+        lock (_sync)
         {
-            return;
+            if (_disposed)
+            {
+                return;
+            }
         }
 
         var status = _ipc.GetStatus();
@@ -247,12 +250,19 @@ public sealed class OverlayDataProvider : IDisposable
 
     public void Dispose()
     {
-        if (_disposed)
+        // 在锁内置位，与 Poll 的检查互斥：
+        // 否则 Poll 可能在检查之后、取得锁之前被 Dispose 超前，
+        // 随后对已释放的监视器调用 Poll 而抛 ObjectDisposedException。
+        lock (_sync)
         {
-            return;
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
         }
 
-        _disposed = true;
         _ipc.StatusChanged -= OnIpcStatusChanged;
         _ipc.Dispose();
 

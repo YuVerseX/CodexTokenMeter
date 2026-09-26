@@ -90,10 +90,16 @@ public sealed class SessionLogMonitor : IDisposable
     public SessionSnapshot Poll(string logPath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(logPath);
-        ThrowIfDisposed();
 
         lock (_sync)
         {
+            // 释放检查必须在锁内。
+            //
+            // 在锁外检查会留下窗口：检查通过后、取得锁之前，
+            // 另一个线程可能完成 Dispose（它在锁内置 _disposed 并释放缓冲），
+            // 随后本次调用就会对已释放的 MemoryStream 调用 SetLength。
+            ThrowIfDisposed();
+
             if (!string.Equals(_logPath, logPath, StringComparison.OrdinalIgnoreCase))
             {
                 ResetCore(logPath);
@@ -143,10 +149,9 @@ public sealed class SessionLogMonitor : IDisposable
     /// </remarks>
     public void Reset(string? logPath = null)
     {
-        ThrowIfDisposed();
-
         lock (_sync)
         {
+            ThrowIfDisposed();
             ResetCore(logPath);
         }
     }
@@ -367,15 +372,15 @@ public sealed class SessionLogMonitor : IDisposable
     /// </remarks>
     public void Dispose()
     {
-        if (_disposed)
-        {
-            return;
-        }
-
-        _disposed = true;
-
         lock (_sync)
         {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+
             _pending.Dispose();
             _cachedSnapshot = null;
         }
@@ -384,9 +389,16 @@ public sealed class SessionLogMonitor : IDisposable
         // 缓冲区由 GC 负责回收，因此无需 SuppressFinalize。
     }
 
+    /// <summary>
+    /// 已释放标志。
+    /// </summary>
+    /// <remarks>
+    /// 读写都在 <c>_sync</c> 锁内，因此不需要 <c>volatile</c>。
+    /// </remarks>
     private bool _disposed;
 
     /// <summary>抛出异常，阻止已释放实例继续使用。</summary>
+    /// <remarks>调用方必须已持有 <c>_sync</c>。</remarks>
     private void ThrowIfDisposed() =>
         ObjectDisposedException.ThrowIf(_disposed, this);
 
