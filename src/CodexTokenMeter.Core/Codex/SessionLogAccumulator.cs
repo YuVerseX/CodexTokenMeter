@@ -254,10 +254,6 @@ internal sealed class SessionLogAccumulator
             TurnId = turnId!,
             ResponseId = ReadString(payload, "response_id"),
             Usage = usage,
-            TurnTokenUsage = payload.TryGetProperty("turn_token_usage", out var turnUsage)
-                && turnUsage.ValueKind == JsonValueKind.Object
-                ? ReadTokenUsage(turnUsage)
-                : null,
         });
 
         var totals = TokenTotals.From(usage);

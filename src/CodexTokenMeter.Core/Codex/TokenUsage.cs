@@ -22,8 +22,6 @@ public sealed record TokenUsage
 
     /// <summary>该次调用的输入与输出之和。</summary>
     public long TotalTokens { get; init; }
-
-    public static TokenUsage Empty { get; } = new();
 }
 
 /// <summary>
@@ -35,11 +33,18 @@ public sealed record UsageRecord
     public DateTimeOffset? Timestamp { get; init; }
 
     public required string TurnId { get; init; }
-    public string? ResponseId { get; init; }
-    public required TokenUsage Usage { get; init; }
 
-    /// <summary>该 turn 从开始到本次调用的累计用量。用于在不重算前缀的情况下求本轮花费。</summary>
-    public TokenUsage? TurnTokenUsage { get; init; }
+    /// <summary>
+    /// 该次调用的响应标识。
+    /// </summary>
+    /// <remarks>
+    /// 当前不参与计算，仅由测试断言其被正确解析。
+    /// 保留是因为它能把同一次调用在两个数据源之间对上，
+    /// 排查不一致时是唯一可用的关联键。
+    /// </remarks>
+    public string? ResponseId { get; init; }
+
+    public required TokenUsage Usage { get; init; }
 }
 
 /// <summary>

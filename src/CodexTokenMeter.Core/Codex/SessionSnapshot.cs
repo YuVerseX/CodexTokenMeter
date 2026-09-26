@@ -90,7 +90,4 @@ public sealed record SessionSnapshot
     /// <summary>最后一条 token_count 快照，可能为 null。</summary>
     public TokenCountSnapshot? LatestTokenCount =>
         TokenCounts.Count > 0 ? TokenCounts[^1] : null;
-
-    /// <summary>是否成功取到可用的会话数据。</summary>
-    public bool HasData => UsageRecords.Count > 0 || TokenCounts.Count > 0;
 }
