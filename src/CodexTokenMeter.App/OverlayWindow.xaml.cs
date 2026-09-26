@@ -221,16 +221,35 @@ public partial class OverlayWindow : Window
 
         var dictionary = new ResourceDictionary { Source = source };
 
-        // 替换主题字典，保留其它资源。
+        // 用字段持有当前主题字典的引用，而不是依赖它在集合中的下标。
+        //
+        // 实测说明：在当前架构下（App.xaml 无合并字典）按下标替换 merged[0]
+        // 也能正常工作，不会累积。这里改用引用是为了去掉一个隐含假设——
+        // 「本窗口是字典集合的唯一维护者」。一旦有其它来源先插入字典，
+        // 按下标替换会静默失效（每次新增而不是替换，资源查找命中旧的那份）。
+        // 代价只是多一个字段。
         var merged = Resources.MergedDictionaries;
-        if (merged.Count > 0 && merged[0].Source?.OriginalString.Contains("Themes/") == true)
+
+        if (_themeDictionary is not null)
         {
-            merged[0] = dictionary;
+            var index = merged.IndexOf(_themeDictionary);
+
+            if (index >= 0)
+            {
+                merged[index] = dictionary;
+            }
+            else
+            {
+                // 已被外部移除：重新加入。
+                merged.Insert(0, dictionary);
+            }
         }
         else
         {
             merged.Insert(0, dictionary);
         }
+
+        _themeDictionary = dictionary;
 
         // 单独设置的画刷不会随 DynamicResource 更新，需要重新应用。
         ReapplyThemeBrushes();
@@ -238,6 +257,17 @@ public partial class OverlayWindow : Window
         // 主题可能改变字体度量与边框宽度，进而改变内容尺寸。
         RefreshSize();
     }
+
+    /// <summary>
+    /// 当前已装上的主题字典。
+    /// </summary>
+    /// <remarks>
+    /// 持有引用以便精确替换，而不是按下标猜测。
+    /// </remarks>
+    private ResourceDictionary? _themeDictionary;
+
+    /// <summary>当前合并字典的数量，供诊断验证是否泄漏。</summary>
+    internal int MergedDictionaryCount => Resources.MergedDictionaries.Count;
 
     /// <summary>更新展示数据。</summary>
     public void UpdateData(OverlayData data)
@@ -634,12 +664,6 @@ public partial class OverlayWindow : Window
         Top = y;
 
         PositionDragged?.Invoke(this, (x, y));
-    }
-
-    private void OnCapsuleClick(object sender, MouseButtonEventArgs e)
-    {
-        // 单击处理已移到 MouseUp（需先区分拖动与单击），此处不再切换面板。
-        e.Handled = true;
     }
 
     /// <summary>构造从顶部顺时针扫过指定百分比的圆弧。</summary>

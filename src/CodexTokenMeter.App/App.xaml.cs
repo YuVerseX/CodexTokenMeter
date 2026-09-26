@@ -257,6 +257,33 @@ public partial class App : Application
             expandTimer.Start();
         }
 
+        // 诊断用途：反复切换主题，验证资源字典不会累积。
+        if (e.Args.Contains("--theme-stress"))
+        {
+            _forceFollow = true;
+
+            var themeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+            var iterations = 0;
+
+            themeTimer.Tick += (_, _) =>
+            {
+                iterations++;
+
+                if (_window is null || iterations > 10)
+                {
+                    themeTimer.Stop();
+                    Report($"theme-stress：切换 {iterations - 1} 次后，"
+                        + $"合并字典数={_window?.MergedDictionaryCount}");
+                    Shutdown();
+                    return;
+                }
+
+                _window.ApplyTheme(iterations % 2 == 0);
+            };
+
+            themeTimer.Start();
+        }
+
         if (e.Args.Contains("--self-check"))
         {
             _forceFollow = true;
