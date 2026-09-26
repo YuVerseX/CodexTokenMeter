@@ -510,7 +510,7 @@ public partial class App : Application
     /// 切换一个胶囊指标的显隐。
     /// </summary>
     /// <remarks>
-    /// 勾选顺序不影响显示顺序：<see cref="CapsuleMetricCatalog.Ordered"/> 
+    /// 勾选顺序不影响显示顺序：<see cref="CapsuleMetricCatalog.Ordered"/>
     /// 定义了规范顺序，因此无论怎么勾选，胶囊的视觉节奏都保持一致。
     /// </remarks>
     private void ToggleCapsuleMetric(CapsuleMetric metric)

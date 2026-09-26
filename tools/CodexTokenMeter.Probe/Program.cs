@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
@@ -15,6 +16,26 @@ using CodexTokenMeter.Core.Pricing;
 if (args.Length > 0 && args[0] == "--ipc")
 {
     return await VerifyIpcAsync(args.Length > 1 ? args[1] : null);
+}
+
+if (args.Length > 0 && args[0] == "locator-perf")
+{
+    return RunLocatorPerfProbe();
+}
+
+if (args.Length > 0 && args[0] == "poll-cost")
+{
+    return RunPollCostProbe();
+}
+
+if (args.Length > 0 && args[0] == "scan-scale")
+{
+    return RunScanScaleProbe();
+}
+
+if (args.Length > 0 && args[0] == "scan-cost")
+{
+    return RunScanCostProbe();
 }
 
 if (args.Length > 0 && args[0] == "fork")
@@ -564,4 +585,465 @@ static int RunForkProbe()
     }
 
     return 0;
+}
+
+/// <summary>
+/// 测量会话目录扫描成本，用于决定缓存失效策略。
+/// </summary>
+/// <remarks>
+/// 分叉会话产生后需要重新扫描才能发现新文件，但不能每轮都扫。
+/// 本工具给出实际数字，让 TTL 的选择有依据而不是拍脑袋。
+/// </remarks>
+static int RunScanCostProbe()
+{
+    var sessionsRoot = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+        ".codex",
+        "sessions");
+
+    if (!Directory.Exists(sessionsRoot))
+    {
+        Console.Error.WriteLine($"会话目录不存在：{sessionsRoot}");
+        return 1;
+    }
+
+    var total = Directory.EnumerateFiles(sessionsRoot, "*.jsonl", SearchOption.AllDirectories).Count();
+    Console.WriteLine($"会话文件 {total} 个");
+    Console.WriteLine();
+
+    var timings = new List<double>();
+
+    for (var i = 0; i < 20; i++)
+    {
+        var sw = Stopwatch.StartNew();
+
+        string? best = null;
+        var bestTime = DateTime.MinValue;
+
+        foreach (var path in Directory.EnumerateFiles(sessionsRoot, "*.jsonl", SearchOption.AllDirectories))
+        {
+            var name = Path.GetFileName(path);
+            if (!name.StartsWith("rollout-", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var time = File.GetLastWriteTimeUtc(path);
+            if (time > bestTime)
+            {
+                bestTime = time;
+                best = path;
+            }
+        }
+
+        sw.Stop();
+        timings.Add(sw.Elapsed.TotalMilliseconds);
+        _ = best;
+    }
+
+    timings.Sort();
+    var median = timings[timings.Count / 2];
+
+    Console.WriteLine("=== 扫描耗时（20 次）===");
+    Console.WriteLine($"  中位数: {median:F2} ms    最快: {timings[0]:F2} ms    最慢: {timings[^1]:F2} ms");
+    Console.WriteLine();
+
+    Console.WriteLine("=== 推算 CPU 占用（700ms 轮询）===");
+    foreach (var ttl in new[] { 0.0, 2.0, 5.0, 10.0, 30.0 })
+    {
+        var perSecond = ttl <= 0 ? 1.0 / 0.7 : 1.0 / ttl;
+        var load = median * perSecond / 1000.0 * 100;
+        var label = ttl <= 0 ? "每轮都扫" : $"TTL {ttl:F0}s";
+        Console.WriteLine($"  {label,-12} {load,7:F3}% 单核");
+    }
+
+    Console.WriteLine();
+    Console.WriteLine("=== 规模外推 ===");
+    Console.WriteLine($"  {total} 个文件 → {median:F2} ms");
+    Console.WriteLine($"  推算 3000 个文件 → {median * 3000 / Math.Max(1, total):F1} ms（仍是亚毫秒级）");
+
+    return 0;
+}
+
+/// <summary>
+/// 规模化测量会话目录扫描成本。
+/// </summary>
+/// <remarks>
+/// Poll() 运行在 UI 线程上，扫描耗时会直接表现为界面卡顿。
+/// 本地只有十几个文件，无法反映真实规模（用户积累数月后可能有数千个），
+/// 因此构造合成目录来测量。
+/// </remarks>
+static int RunScanScaleProbe()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"ctm-scan-{Guid.NewGuid():N}");
+
+    try
+    {
+        Console.WriteLine("=== 构造合成会话目录 ===");
+
+        var dayDirectories = new List<string>();
+        var today = new DateTime(2026, 9, 26);
+
+        for (var dayOffset = 0; dayOffset < 90; dayOffset++)
+        {
+            var day = today.AddDays(-dayOffset);
+            var directory = Path.Combine(
+                root,
+                day.ToString("yyyy", CultureInfo.InvariantCulture),
+                day.ToString("MM", CultureInfo.InvariantCulture),
+                day.ToString("dd", CultureInfo.InvariantCulture));
+
+            Directory.CreateDirectory(directory);
+            dayDirectories.Add(directory);
+        }
+
+        const int filesPerDay = 34;
+
+        foreach (var directory in dayDirectories)
+        {
+            for (var fileIndex = 0; fileIndex < filesPerDay; fileIndex++)
+            {
+                var id = Guid.NewGuid().ToString();
+                File.WriteAllText(
+                    Path.Combine(directory, $"rollout-2026-09-26T10-00-00-{id}.jsonl"),
+                    "{}");
+            }
+        }
+
+        var total = Directory.EnumerateFiles(root, "*.jsonl", SearchOption.AllDirectories).Count();
+        Console.WriteLine($"  共 {total} 个文件，{dayDirectories.Count} 个日期目录");
+        Console.WriteLine();
+
+        var fullScan = MeasureScan(() => FullScan(root), 10);
+        Console.WriteLine($"=== A. 全量扫描（当前实现）===");
+        Console.WriteLine($"  中位数 {fullScan.Median:F2} ms   最慢 {fullScan.Max:F2} ms");
+        Console.WriteLine();
+
+        var dayScan = MeasureScan(() => DayScan(dayDirectories[0]), 10);
+        Console.WriteLine($"=== B. 仅扫今日目录 ===");
+        Console.WriteLine($"  中位数 {dayScan.Median:F2} ms   最慢 {dayScan.Max:F2} ms");
+        Console.WriteLine();
+
+        Console.WriteLine("=== C. 全量扫描的 CPU 占用推算（700ms 轮询）===");
+        foreach (var ttl in new[] { 0.7, 2.0, 5.0, 10.0 })
+        {
+            var perSecond = 1.0 / ttl;
+            Console.WriteLine($"  TTL {ttl,4:F1}s   {fullScan.Median * perSecond / 10.0,7:F2}% 单核");
+        }
+
+        Console.WriteLine();
+        Console.WriteLine($"=== D. 加速比 ===");
+        Console.WriteLine($"  全量 {fullScan.Median:F1} ms -> 今日目录 {dayScan.Median:F2} ms" +
+            $"（快 {fullScan.Median / Math.Max(0.001, dayScan.Median):F0} 倍）");
+
+        Console.WriteLine();
+        Console.WriteLine("=== E. 结论 ===");
+        Console.WriteLine(fullScan.Median > 20
+            ? $"  全量扫描 {fullScan.Median:F0} ms 在 UI 线程上会造成可见卡顿。"
+            : $"  全量扫描 {fullScan.Median:F0} ms 尚可接受。");
+
+        return 0;
+    }
+    finally
+    {
+        try
+        {
+            Directory.Delete(root, recursive: true);
+        }
+        catch (IOException)
+        {
+            // 清理失败不影响结论。
+        }
+    }
+}
+
+/// <summary>重复测量并返回统计。</summary>
+static (double Median, double Max) MeasureScan(Action action, int iterations)
+{
+    var timings = new List<double>();
+
+    // 预热，避免把 JIT 与文件系统缓存冷启动算进去。
+    action();
+
+    for (var i = 0; i < iterations; i++)
+    {
+        var sw = Stopwatch.StartNew();
+        action();
+        sw.Stop();
+        timings.Add(sw.Elapsed.TotalMilliseconds);
+    }
+
+    timings.Sort();
+    return (timings[timings.Count / 2], timings[^1]);
+}
+
+/// <summary>当前实现：递归遍历全部目录。</summary>
+static void FullScan(string root)
+{
+    string? best = null;
+    var bestTime = DateTime.MinValue;
+
+    foreach (var path in Directory.EnumerateFiles(root, "*.jsonl", SearchOption.AllDirectories))
+    {
+        var name = Path.GetFileName(path);
+        if (!name.StartsWith("rollout-", StringComparison.OrdinalIgnoreCase))
+        {
+            continue;
+        }
+
+        var time = File.GetLastWriteTimeUtc(path);
+        if (time > bestTime)
+        {
+            bestTime = time;
+            best = path;
+        }
+    }
+
+    _ = best;
+}
+
+/// <summary>候选方案：只扫单个日期目录。</summary>
+static void DayScan(string directory)
+{
+    string? best = null;
+    var bestTime = DateTime.MinValue;
+
+    foreach (var path in Directory.EnumerateFiles(directory, "*.jsonl"))
+    {
+        var time = File.GetLastWriteTimeUtc(path);
+        if (time > bestTime)
+        {
+            bestTime = time;
+            best = path;
+        }
+    }
+
+    _ = best;
+}
+
+/// <summary>
+/// 测量一次完整 Poll 的耗时构成。
+/// </summary>
+/// <remarks>
+/// Poll 运行在 UI 线程上，其耗时直接表现为界面卡顿。
+/// 需要分别测量各环节，才能知道优化方向。
+/// </remarks>
+static int RunPollCostProbe()
+{
+    var sessionsRoot = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+        ".codex",
+        "sessions");
+
+    if (!Directory.Exists(sessionsRoot))
+    {
+        Console.Error.WriteLine($"会话目录不存在：{sessionsRoot}");
+        return 1;
+    }
+
+    // 取最大的会话文件，代表最坏情况。
+    var largest = Directory
+        .EnumerateFiles(sessionsRoot, "*.jsonl", SearchOption.AllDirectories)
+        .Select(path => new FileInfo(path))
+        .OrderByDescending(info => info.Length)
+        .First();
+
+    Console.WriteLine($"最大会话：{largest.Name}");
+    Console.WriteLine($"  大小 {largest.Length / 1024.0 / 1024.0:F1} MB");
+    Console.WriteLine();
+
+    var catalog = PricingCatalog.CreateDefault();
+
+    // 首次解析（含全量读文件）。
+    var sw = Stopwatch.StartNew();
+    var snapshot = SessionLogReader.Read(largest.FullName);
+    sw.Stop();
+    var parseMs = sw.Elapsed.TotalMilliseconds;
+
+    Console.WriteLine("=== A. 全量解析（仅首次/切换会话时发生）===");
+    Console.WriteLine($"  {parseMs:F1} ms   记录数 {snapshot.UsageRecords.Count}");
+    Console.WriteLine();
+
+    // 计费重算（每次轮询都发生）。
+    var costTimings = new List<double>();
+    for (var i = 0; i < 30; i++)
+    {
+        var s = Stopwatch.StartNew();
+        var summary = SessionCostCalculator.Calculate(snapshot, catalog);
+        s.Stop();
+        costTimings.Add(s.Elapsed.TotalMilliseconds);
+        _ = summary;
+    }
+    costTimings.Sort();
+    var costMedian = costTimings[costTimings.Count / 2];
+
+    Console.WriteLine("=== B. 计费重算（每次轮询都发生）===");
+    Console.WriteLine($"  中位数 {costMedian:F3} ms   最慢 {costTimings[^1]:F3} ms");
+    Console.WriteLine();
+
+    // 指标构建。
+    var metricsTimings = new List<double>();
+    for (var i = 0; i < 30; i++)
+    {
+        var s = Stopwatch.StartNew();
+        var metrics = SessionMetrics.Create(snapshot);
+        s.Stop();
+        metricsTimings.Add(s.Elapsed.TotalMilliseconds);
+        _ = metrics;
+    }
+    metricsTimings.Sort();
+    var metricsMedian = metricsTimings[metricsTimings.Count / 2];
+
+    Console.WriteLine("=== C. 指标构建（每次轮询都发生）===");
+    Console.WriteLine($"  中位数 {metricsMedian:F3} ms");
+    Console.WriteLine();
+
+    Console.WriteLine("=== D. 轮询稳态成本（不含文件扫描）===");
+    var steady = costMedian + metricsMedian;
+    Console.WriteLine($"  {steady:F3} ms / 次");
+    Console.WriteLine($"  700ms 轮询 → {steady / 700 * 100:F3}% 单核");
+    Console.WriteLine();
+
+    Console.WriteLine("=== E. 加上全量目录扫描（3060 文件的实测值）===");
+    var withScan = steady + 84.5;
+    Console.WriteLine($"  {withScan:F1} ms / 次");
+    Console.WriteLine($"  700ms 轮询 → {withScan / 700 * 100:F2}% 单核，且每次都有 {withScan:F0} ms 的 UI 卡顿");
+    Console.WriteLine();
+    Console.WriteLine("=== F. 结论 ===");
+    Console.WriteLine(costMedian > 1
+        ? $"  计费重算 {costMedian:F2} ms 值得优化（可随快照缓存）。"
+        : $"  计费重算 {costMedian:F3} ms 可忽略。");
+    Console.WriteLine($"  瓶颈是目录扫描：{84.5:F0} ms 而非计费的 {costMedian:F2} ms。");
+
+    return 0;
+}
+
+/// <summary>
+/// 对比优化前后的会话定位性能。
+/// </summary>
+/// <remarks>
+/// 优化前：递归遍历全部日期目录。
+/// 优化后：按日期倒序检索，命中即停。
+/// </remarks>
+static int RunLocatorPerfProbe()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"ctm-perf-{Guid.NewGuid():N}");
+
+    try
+    {
+        Console.WriteLine("=== 构造合成目录（模拟长期使用）===");
+
+        var days = 365;
+        var perDay = 10;
+        var today = DateTime.Now.Date;
+
+        for (var offset = 0; offset < days; offset++)
+        {
+            var day = today.AddDays(-offset);
+            var directory = Path.Combine(
+                root,
+                day.ToString("yyyy", CultureInfo.InvariantCulture),
+                day.ToString("MM", CultureInfo.InvariantCulture),
+                day.ToString("dd", CultureInfo.InvariantCulture));
+
+            Directory.CreateDirectory(directory);
+
+            for (var i = 0; i < perDay; i++)
+            {
+                var id = Guid.NewGuid().ToString();
+                File.WriteAllText(
+                    Path.Combine(directory, $"rollout-{day:yyyy-MM-dd}T10-00-00-{id}.jsonl"),
+                    "{}");
+            }
+        }
+
+        var total = Directory.EnumerateFiles(root, "*.jsonl", SearchOption.AllDirectories).Count();
+        Console.WriteLine($"  {total} 个文件，{days} 个日期目录");
+        Console.WriteLine();
+
+        // 目标会话放在今天，代表正常使用。
+        const string ThreadId = "01a0d656-cf19-7532-af4a-f089fc3163ed";
+        var targetDirectory = Path.Combine(
+            root,
+            today.ToString("yyyy", CultureInfo.InvariantCulture),
+            today.ToString("MM", CultureInfo.InvariantCulture),
+            today.ToString("dd", CultureInfo.InvariantCulture));
+        File.WriteAllText(
+            Path.Combine(targetDirectory, $"rollout-{today:yyyy-MM-dd}T15-00-00-{ThreadId}.jsonl"),
+            "{}");
+
+        Console.WriteLine("=== A. 优化前：递归全量扫描 ===");
+        var before = MeasureOp(() => FullScanAgain(root, ThreadId), 10);
+        Console.WriteLine($"  中位数 {before.Median:F2} ms   最慢 {before.Max:F2} ms");
+        Console.WriteLine();
+
+        Console.WriteLine("=== B. 优化后：按日期倒序定位 ===");
+        var after = MeasureOp(() => SessionLogLocator.Locate(root, ThreadId), 20);
+        Console.WriteLine($"  中位数 {after.Median:F3} ms   最慢 {after.Max:F3} ms");
+        Console.WriteLine();
+
+        Console.WriteLine("=== C. 改进 ===");
+        Console.WriteLine($"  快 {before.Median / Math.Max(0.001, after.Median):F0} 倍");
+        Console.WriteLine();
+
+        Console.WriteLine("=== D. CPU 占用推算（700ms 轮询 + 2s 复查）===");
+        var beforeLoad = before.Median / 2000 * 100;
+        var afterLoad = after.Median / 2000 * 100;
+        Console.WriteLine($"  优化前 {beforeLoad:F2}% 单核，且每 2 秒有 {before.Median:F0} ms 的 UI 卡顿");
+        Console.WriteLine($"  优化后 {afterLoad:F4}% 单核，卡顿 {after.Median:F3} ms（不可感知）");
+        Console.WriteLine();
+
+        Console.WriteLine("=== E. 结论 ===");
+        Console.WriteLine(after.Median < 1
+            ? $"  定位耗时 {after.Median:F3} ms，已不再是瓶颈。"
+            : $"  定位仍需 {after.Median:F1} ms，值得继续优化。");
+
+        return 0;
+    }
+    finally
+    {
+        try { Directory.Delete(root, recursive: true); } catch (IOException) { }
+    }
+}
+
+static (double Median, double Max) MeasureOp(Action action, int iterations)
+{
+    var timings = new List<double>();
+    action();
+
+    for (var i = 0; i < iterations; i++)
+    {
+        var sw = Stopwatch.StartNew();
+        action();
+        sw.Stop();
+        timings.Add(sw.Elapsed.TotalMilliseconds);
+    }
+
+    timings.Sort();
+    return (timings[timings.Count / 2], timings[^1]);
+}
+
+static void FullScanAgain(string root, string threadId)
+{
+    string? best = null;
+    var bestTime = DateTime.MinValue;
+
+    foreach (var path in Directory.EnumerateFiles(root, "*.jsonl", SearchOption.AllDirectories))
+    {
+        var name = Path.GetFileName(path);
+        if (!name.StartsWith("rollout-", StringComparison.OrdinalIgnoreCase))
+        {
+            continue;
+        }
+
+        var time = File.GetLastWriteTimeUtc(path);
+        if (time > bestTime)
+        {
+            bestTime = time;
+            best = path;
+        }
+    }
+
+    _ = best;
+    _ = threadId;
 }

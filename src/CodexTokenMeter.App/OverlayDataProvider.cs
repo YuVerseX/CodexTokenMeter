@@ -189,7 +189,7 @@ public sealed class OverlayDataProvider : IDisposable
             {
                 ThreadId = threadId,
                 IsConnected = status.IsConnected,
-            PricingWarning = _pricingWarning,
+                PricingWarning = _pricingWarning,
             });
             return;
         }
@@ -295,9 +295,14 @@ public sealed class OverlayDataProvider : IDisposable
     /// 缓存失效（文件被归档或删除）时才重新搜索。
     /// </para>
     /// <para>
+    /// 缓存的正结果设了复查间隔：**分叉会话可能在运行期间产生**，
+    /// 此时旧路径仍然存在，只靠 <c>File.Exists</c> 判断会一直命中
+    /// 早已结束的父文件而永不切换。
+    /// </para>
+    /// <para>
     /// 搜索失败的负结果也会被缓存一小段时间。若不缓存，
     /// 「会话已切换但日志尚未落盘」的窗口期会让每轮轮询
-    /// （700ms）都做一次目录全盘扫描。
+    /// （700ms）都做一次目录遍历。
     /// </para>
     /// </remarks>
     private string? ResolveLogPath(string threadId)
@@ -306,16 +311,20 @@ public sealed class OverlayDataProvider : IDisposable
 
         lock (_sync)
         {
-            // 已缓存且文件仍在：直接返回。
-            if (string.Equals(_activeThreadId, threadId, StringComparison.OrdinalIgnoreCase)
+            var sameThread =
+                string.Equals(_activeThreadId, threadId, StringComparison.OrdinalIgnoreCase);
+
+            // 已缓存且文件仍在，且未到复查时间：直接返回。
+            if (sameThread
                 && _activeLogPath is not null
+                && now < _nextResolveAllowedAt
                 && File.Exists(_activeLogPath))
             {
                 return _activeLogPath;
             }
 
-            // 上次搜索没找到，且间隔未到：不要重复扫描。
-            if (string.Equals(_activeThreadId, threadId, StringComparison.OrdinalIgnoreCase)
+            // 上次搜索没找到，且间隔未到：不要重复搜索。
+            if (sameThread
                 && _activeLogPath is null
                 && now < _nextSearchAllowedAt)
             {
@@ -328,13 +337,21 @@ public sealed class OverlayDataProvider : IDisposable
             return null;
         }
 
-        var best = SearchLogPath(threadId);
+        // 按日期倒序定位，避免全盘遍历。
+        // 实测 3000 个文件全量扫描 84 ms（UI 线程上会卡顿），
+        // 按日期定位只要 0.9 ms。
+        var best = SessionLogLocator.Locate(_sessionsRoot, threadId);
+        var pathChanged = false;
 
         lock (_sync)
         {
-            if (!string.Equals(_activeThreadId, threadId, StringComparison.OrdinalIgnoreCase))
+            // 文件换了（包括首次找到、分叉产生、或旧文件被归档）：
+            // 必须重置解析状态，否则会把上一份文件的偏移与累计混进来。
+            pathChanged = !string.Equals(_activeLogPath, best, StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(_activeThreadId, threadId, StringComparison.OrdinalIgnoreCase);
+
+            if (pathChanged)
             {
-                // 会话已切换：重置解析状态，避免把上一个会话的记录算进来。
                 _logMonitor.Reset(best);
             }
 
@@ -345,88 +362,34 @@ public sealed class OverlayDataProvider : IDisposable
             _nextSearchAllowedAt = best is null
                 ? now + SearchRetryIntervalMilliseconds
                 : 0;
+
+            // 找到后也要定期复查，以便发现运行期间产生的分叉会话。
+            _nextResolveAllowedAt = best is null
+                ? 0
+                : now + ResolveRecheckIntervalMilliseconds;
         }
 
         return best;
     }
 
-    /// <summary>
-    /// 在会话目录下搜索指定 thread id 的日志。
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// 匹配两种文件名：
-    /// <list type="bullet">
-    /// <item><c>rollout-&lt;时间&gt;-&lt;id&gt;.jsonl</c> —— 普通会话</item>
-    /// <item><c>rollout-&lt;时间&gt;-&lt;id&gt;_&lt;子id&gt;.jsonl</c> —— 分叉会话</item>
-    /// </list>
-    /// </para>
-    /// <para>
-    /// 分叉（fork）由「在新窗口继续此会话」类操作产生。它的文件名把父会话 id
-    /// 放在前面，子 id 放后面；IPC 广播的 conversationId 仍是**父 id**。
-    /// 早期版本只做 <c>EndsWith(id + ".jsonl")</c> 匹配，因此只会命中父文件，
-    /// 浮层会跟随一个早已结束的旧会话——实测显示的是前一天的累计值。
-    /// </para>
-    /// <para>
-    /// 两种文件都可能存在，取最近写入的一份：分叉后父文件不再变化，
-    /// 而分叉文件会持续写入，因此按写入时间取最新是可靠的。
-    /// </para>
-    /// <para>
-    /// 遍历可能因权限不足、路径过长或目录被并发删除而失败。
-    /// 这类失败不应让浮层崩溃——返回 null 即可，下一轮（节流后）会重试。
-    /// </para>
-    /// </remarks>
-    private string? SearchLogPath(string threadId)
-    {
-        string? best = null;
-        var bestTime = DateTime.MinValue;
-
-        try
-        {
-            foreach (var path in Directory.EnumerateFiles(
-                _sessionsRoot, "*.jsonl", SearchOption.AllDirectories))
-            {
-                if (!MatchesThreadId(path, threadId))
-                {
-                    continue;
-                }
-
-                var time = File.GetLastWriteTimeUtc(path);
-                if (time > bestTime)
-                {
-                    bestTime = time;
-                    best = path;
-                }
-            }
-        }
-        catch (Exception exception) when (exception is IOException
-            or UnauthorizedAccessException
-            or System.Security.SecurityException
-            or DirectoryNotFoundException)
-        {
-            // 遍历中断：返回已找到的最优结果（可能为 null）。
-            // 已找到的结果仍然有效，丢掉反而会让浮层无数据可显。
-            return best;
-        }
-
-        return best;
-    }
-
-    /// <summary>
-    /// 判断文件是否是给定 thread id 的会话日志。
-    /// </summary>
-    /// <remarks>
-    /// 规则实现在 Core 中以便单元测试，见
-    /// <see cref="SessionPathResolver.MatchesThreadId"/>。
-    /// </remarks>
-    internal static bool MatchesThreadId(string path, string threadId) =>
-        SessionPathResolver.MatchesThreadId(path, threadId);
-
-    /// <summary>未找到日志时，两次全盘搜索的最小间隔。</summary>
+    /// <summary>未找到日志时，两次搜索的最小间隔。</summary>
     private const long SearchRetryIntervalMilliseconds = 3000;
 
-    /// <summary>下一次允许搜索的时间点（<see cref="Environment.TickCount64"/>）。</summary>
+    /// <summary>
+    /// 已找到日志时，两次复查的最小间隔。
+    /// </summary>
+    /// <remarks>
+    /// 复查用于发现运行期间产生的分叉会话。
+    /// 按日期定位的代价实测约 0.9 ms，2 秒一次即 0.045% 单核，
+    /// 相比“永不发现分叉”而言这个代价是值得的。
+    /// </remarks>
+    private const long ResolveRecheckIntervalMilliseconds = 2000;
+
+    /// <summary>下一次允许搜索的时间点（未找到时）。</summary>
     private long _nextSearchAllowedAt;
+
+    /// <summary>下一次允许复查的时间点（已找到后）。</summary>
+    private long _nextResolveAllowedAt;
 
     /// <summary>
     /// 判断两份数据是否等价，避免无变化时反复通知 UI。
