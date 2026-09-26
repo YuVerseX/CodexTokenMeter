@@ -1022,11 +1022,13 @@ public partial class App : Application
 
         // 自检模式下不依赖前台：SetForegroundWindow 在非交互场景不可靠，
         // 而自检的目标是验证定位与数据链路，而非 Windows 的前台规则。
+        //
+        // 这里用「同进程 + 面积最大」而不是直接在整个候选集里取最大：
+        // 用户可能开着多个 Codex 实例，跨进程取最大会跟随到另一个实例的窗口。
+        // 句柄作为次键保证结果稳定，否则同尺寸窗口在不同轮次可能选中不同窗口，
+        // 浮层会无规律地跳换宿主。
         var host = _forceFollow
-            ? candidates
-                .Where(CodexWindowSelector.IsHostCandidate)
-                .OrderByDescending(item => (long)item.Bounds.Width * item.Bounds.Height)
-                .FirstOrDefault()
+            ? SelectLargestHostCandidate(candidates)
             : CodexWindowSelector.Select(candidates, foreground);
 
         _hostHandle = host?.Handle ?? nint.Zero;
@@ -1090,6 +1092,17 @@ public partial class App : Application
         _lastHostBounds = host.Bounds;
         ApplyPlacement(host.Bounds);
     }
+
+    /// <summary>
+    /// 从候选中选出面积最大的主窗口，用于 <c>--force-follow</c> 诊断模式。
+    /// </summary>
+    /// <remarks>
+    /// 选路实现在 Core 中以便单元测试，见
+    /// <see cref="CodexWindowSelector.SelectLargest"/>。
+    /// </remarks>
+    private static WindowCandidate? SelectLargestHostCandidate(
+        IReadOnlyList<WindowCandidate> candidates) =>
+        CodexWindowSelector.SelectLargest(candidates);
 
     private void ApplyPlacement(IntRect hostBounds)
     {

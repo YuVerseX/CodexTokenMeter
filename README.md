@@ -160,6 +160,22 @@ rollout-<时间>-<父会话id>_<子会话id>.jsonl    分叉会话
 两个都套会得到 4 倍价。某个子项缺失时该项独立回落到基础价。
 `flex` 永远走 0.5 倍率，`default` 与未知档位按 1.0。
 
+**当前不向计费传入档位，即假设 standard 档。** 原因：
+
+- 会话日志里确实有 `service_tier`，但它位于
+  `event_msg/thread_settings_applied` 的 `thread_settings` 中，
+  而该事件**不带 `turn_id`**，描述的是「设置发生变更」而非
+  「这次调用用了哪个档」。
+- 带 `turn_id` 的 `turn_context` 事件**不含** `service_tier`。
+- 实测事件顺序：`turn_context` → `token_usage_record` →
+  … → `thread_settings_applied`。设置事件出现在部分调用记录**之后**，
+  因此无法可靠地把它归属到某次调用。
+- 实测全部 76 次出现均为 `default`，即默认情况下的计费是正确的。
+
+如果要支持非默认档位，需要先找到能把档位与调用关联起来的字段。
+不能仅凭「最近一次出现的值」推测——那会给已发生的调用套用后续设置，
+而档位差异最大可达 2 倍价。
+
 ### 金额精度
 
 全程 `float64` 不舍入，仅在展示与对账时量化到 8 位小数（half-away-from-zero），

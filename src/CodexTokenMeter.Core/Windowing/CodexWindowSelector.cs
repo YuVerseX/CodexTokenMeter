@@ -74,6 +74,43 @@ public static class CodexWindowSelector
     }
 
     /// <summary>
+    /// 从候选中选出面积最大的主窗口（忽略前台）。
+    /// </summary>
+    /// <param name="candidates">所有候选顶层窗口。</param>
+    /// <remarks>
+    /// <para>
+    /// 供 <c>--force-follow</c> 诊断模式使用：该模式不依赖前台窗口
+    /// （自动化场景下 <c>SetForegroundWindow</c> 不可靠），
+    /// 因此需要一条不参考前台的选路。
+    /// </para>
+    /// <para>
+    /// 先在**单个进程内**筛选，再取该进程内最大的窗口。
+    /// 跨进程直接取最大会跟随到另一个 Codex 实例的窗口
+    /// （用户可能开着多个实例）。
+    /// </para>
+    /// <para>
+    /// 句柄作为末级次键：同尺寸窗口需要稳定选择，
+    /// 否则不同轮次可能选中不同窗口，浮层会无规律地跳换宿主。
+    /// </para>
+    /// </remarks>
+    public static WindowCandidate? SelectLargest(
+        IReadOnlyList<WindowCandidate> candidates)
+    {
+        ArgumentNullException.ThrowIfNull(candidates);
+
+        return candidates
+            .Where(IsHostCandidate)
+            .GroupBy(item => item.ProcessId)
+            .Select(group => group
+                .OrderByDescending(Area)
+                .ThenBy(item => item.Handle)
+                .First())
+            .OrderByDescending(Area)
+            .ThenBy(item => item.Handle)
+            .FirstOrDefault();
+    }
+
+    /// <summary>
     /// 判定是否为可能的主窗口。
     /// </summary>
     /// <remarks>

@@ -46,36 +46,50 @@ internal sealed class MouseHook : IDisposable
     /// <returns>安装是否成功。</returns>
     internal bool Install()
     {
-        if (_hookHandle != 0)
+        lock (_gate)
         {
-            return true;
+            if (_hookHandle != 0)
+            {
+                return true;
+            }
+
+            if (_disposed)
+            {
+                return false;
+            }
+
+            using var currentProcess = Process.GetCurrentProcess();
+            using var currentModule = currentProcess.MainModule;
+
+            var moduleHandle = GetModuleHandle(currentModule?.ModuleName);
+
+            _hookHandle = SetWindowsHookEx(WhMouseLl, _callback, moduleHandle, 0);
+
+            return _hookHandle != 0;
         }
-
-        using var currentProcess = Process.GetCurrentProcess();
-        using var currentModule = currentProcess.MainModule;
-
-        var moduleHandle = GetModuleHandle(currentModule?.ModuleName);
-
-        _hookHandle = SetWindowsHookEx(WhMouseLl, _callback, moduleHandle, 0);
-
-        return _hookHandle != 0;
     }
 
     public void Dispose()
     {
-        if (_disposed)
+        lock (_gate)
         {
-            return;
-        }
+            if (_disposed)
+            {
+                return;
+            }
 
-        _disposed = true;
+            _disposed = true;
 
-        if (_hookHandle != 0)
-        {
-            UnhookWindowsHookEx(_hookHandle);
-            _hookHandle = 0;
+            if (_hookHandle != 0)
+            {
+                UnhookWindowsHookEx(_hookHandle);
+                _hookHandle = 0;
+            }
         }
     }
+
+    /// <summary>保护安装/卸载与句柄字段。</summary>
+    private readonly Lock _gate = new();
 
     private nint OnMouseEvent(int code, nint wParam, nint lParam)
     {
@@ -91,10 +105,17 @@ internal sealed class MouseHook : IDisposable
                 {
                     ButtonDown?.Invoke(this, (data.PointX, data.PointY));
                 }
-                catch (Exception exception) when (exception is InvalidOperationException
-                    or ArgumentException)
+                catch (Exception exception)
                 {
-                    // 回调抛异常会中断消息链；吞掉以免影响系统输入。
+                    // 吞掉**所有**异常，不只是预期的那两种。
+                    //
+                    // 本回调在系统输入链上运行：异常会穿过原生帧向上传播，
+                    // 结果是鼠标输入被丢弃或系统将钩子静默移除。
+                    // 订阅者的缺陷不应影响用户的鼠标。
+                    //
+                    // 不重抛也不记录：钩子回调有 300ms 超时限制，
+                    // 写日志会拖长回调耗时。
+                    _ = exception;
                 }
             }
         }

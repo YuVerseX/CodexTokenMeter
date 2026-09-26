@@ -221,6 +221,109 @@ public class CodexWindowSelectorTests
         Assert.True(CodexWindowSelector.IsHostCandidate(Host(handle: 1, processId: CodexProcess)));
     }
 
+    [Fact]
+    public void SelectLargestDoesNotSpanProcesses()
+    {
+        // 用户可能开着多个 Codex 实例。
+        // 跨进程直接取最大会跟随到另一个实例的窗口，必须避免。
+        var candidates = new[]
+        {
+            // 进程 100：主窗口较小。
+            Host(handle: 1, processId: 100, width: 800, height: 600),
+
+            // 进程 200：另一个实例，窗口更大。
+            Host(handle: 2, processId: 200, width: 1600, height: 1200),
+            Host(handle: 3, processId: 200, width: 1500, height: 1100),
+        };
+
+        var selected = CodexWindowSelector.SelectLargest(candidates);
+
+        Assert.NotNull(selected);
+        Assert.Equal(200, selected.ProcessId);
+        Assert.Equal(2, selected.Handle);
+    }
+
+    [Fact]
+    public void SelectLargestIsStableForSameSizedWindows()
+    {
+        // 两个同尺寸窗口时，结果必须稳定：
+        // 否则不同轮次可能选中不同窗口，浮层会无规律地跳换宿主。
+        var forward = new[]
+        {
+            Host(handle: 10, processId: 100, width: 1000, height: 800),
+            Host(handle: 20, processId: 100, width: 1000, height: 800),
+        };
+
+        var reversed = new[]
+        {
+            Host(handle: 20, processId: 100, width: 1000, height: 800),
+            Host(handle: 10, processId: 100, width: 1000, height: 800),
+        };
+
+        var first = CodexWindowSelector.SelectLargest(forward);
+        var second = CodexWindowSelector.SelectLargest(reversed);
+
+        Assert.NotNull(first);
+        Assert.NotNull(second);
+
+        // 输入顺序不同，结果必须相同（按句柄升序取第一个）。
+        Assert.Equal(first.Handle, second.Handle);
+        Assert.Equal(10, first.Handle);
+    }
+
+    [Fact]
+    public void SelectLargestIgnoresNonHostCandidates()
+    {
+        // 面积很大的工具窗口或分层合成窗口不应被选中。
+        var tool = Host(
+            handle: 1,
+            processId: 100,
+            extendedStyle: CodexWindowSelector.WsExToolWindow,
+            width: 3000,
+            height: 2000);
+
+        var valid = Host(handle: 2, processId: 100, width: 900, height: 700);
+
+        var selected = CodexWindowSelector.SelectLargest([tool, valid]);
+
+        Assert.NotNull(selected);
+        Assert.Equal(2, selected.Handle);
+    }
+
+    [Fact]
+    public void SelectLargestReturnsNullWhenNoCandidateQualifies()
+    {
+        var tiny = Host(handle: 1, processId: 100, width: 100, height: 80);
+
+        Assert.Null(CodexWindowSelector.SelectLargest([tiny]));
+        Assert.Null(CodexWindowSelector.SelectLargest([]));
+    }
+
+    [Fact]
+    public void SelectLargestSkipsMinimizedAndHiddenWindows()
+    {
+        var minimized = Host(
+            handle: 1,
+            processId: 100,
+            isMinimized: true,
+            width: 2000,
+            height: 1500);
+
+        var hidden = Host(
+            handle: 2,
+            processId: 100,
+            isVisible: false,
+            width: 2000,
+            height: 1500);
+
+        var valid = Host(handle: 3, processId: 100, width: 900, height: 700);
+
+        var selected = CodexWindowSelector.SelectLargest([minimized, hidden, valid]);
+
+        Assert.NotNull(selected);
+        Assert.Equal(3, selected.Handle);
+    }
+
     private static WindowCandidate Host(
         nint handle,
         int processId,
