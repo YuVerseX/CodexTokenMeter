@@ -1,0 +1,23 @@
+# 构建产物
+bin/
+obj/
+artifacts/
+
+# 用户与 IDE 设置
+*.user
+*.suo
+.vs/
+.vscode/
+.idea/
+
+# 诊断日志（应用运行时写到临时目录，但以防被拷到仓库）
+*.log
+
+# 打包与校验产物
+*.zip
+*.sha256
+
+# 操作系统
+Thumbs.db
+desktop.ini
+.DS_Store

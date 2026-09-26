@@ -1,0 +1,30 @@
+# 行尾策略
+#
+# 本项目只在 Windows 上构建与运行（WPF + Win32 P/Invoke），
+# 因此源码统一用 CRLF，与 .editorconfig 的 end_of_line 保持一致。
+#
+# 若不显式声明，Git 会按 core.autocrlf 推断，
+# 不同机器上克隆后可能产生大量「整个文件都改了」的假 diff。
+
+* text=auto eol=crlf
+
+# 二进制文件不做行尾转换
+*.png binary
+*.ico binary
+*.zip binary
+*.dll binary
+*.exe binary
+
+# 补丁与校验文件保持原样
+*.patch text eol=lf
+*.sha256 text eol=lf
+
+# PowerShell 脚本在 Windows 上执行，用 CRLF
+*.ps1 text eol=crlf
+*.psm1 text eol=crlf
+
+# 解决方案与项目文件
+*.slnx text eol=crlf
+*.csproj text eol=crlf
+*.props text eol=crlf
+*.targets text eol=crlf

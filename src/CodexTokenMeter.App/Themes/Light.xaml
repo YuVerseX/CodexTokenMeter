@@ -1,0 +1,67 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+        浅色主题。与深色主题同名同结构，仅数值不同，
+        因此切换主题不需要改动任何布局代码。
+    -->
+
+    <!-- 表面：浅色下用「白 + 微弱描边」建立层级，不用灰底 -->
+    <Color x:Key="SurfaceColor">#FCFDFEFF</Color>
+    <Color x:Key="SurfaceElevatedColor">#FFFFFFFF</Color>
+    <Color x:Key="SurfaceSunkenColor">#66F1F3F7</Color>
+    <Color x:Key="SurfaceBorderColor">#18000000</Color>
+    <Color x:Key="SurfaceBorderStrongColor">#26000000</Color>
+
+    <Color x:Key="TextPrimaryColor">#14171C</Color>
+    <Color x:Key="TextSecondaryColor">#525B6B</Color>
+    <Color x:Key="TextMutedColor">#868FA1</Color>
+
+    <Color x:Key="AccentColor">#2C6FD1</Color>
+    <Color x:Key="AccentSoftColor">#2E2C6FD1</Color>
+    <Color x:Key="CostColor">#128A5E</Color>
+    <Color x:Key="CostWarnColor">#B0700F</Color>
+    <Color x:Key="TrackColor">#14000000</Color>
+
+    <SolidColorBrush x:Key="SurfaceBrush" Color="{StaticResource SurfaceColor}" />
+    <SolidColorBrush x:Key="SurfaceElevatedBrush" Color="{StaticResource SurfaceElevatedColor}" />
+    <SolidColorBrush x:Key="SurfaceSunkenBrush" Color="{StaticResource SurfaceSunkenColor}" />
+    <SolidColorBrush x:Key="SurfaceBorderBrush" Color="{StaticResource SurfaceBorderColor}" />
+    <SolidColorBrush x:Key="SurfaceBorderStrongBrush" Color="{StaticResource SurfaceBorderStrongColor}" />
+    <SolidColorBrush x:Key="TextPrimaryBrush" Color="{StaticResource TextPrimaryColor}" />
+    <SolidColorBrush x:Key="TextSecondaryBrush" Color="{StaticResource TextSecondaryColor}" />
+    <SolidColorBrush x:Key="TextMutedBrush" Color="{StaticResource TextMutedColor}" />
+    <SolidColorBrush x:Key="AccentBrush" Color="{StaticResource AccentColor}" />
+    <SolidColorBrush x:Key="AccentSoftBrush" Color="{StaticResource AccentSoftColor}" />
+    <SolidColorBrush x:Key="CostBrush" Color="{StaticResource CostColor}" />
+    <SolidColorBrush x:Key="CostWarnBrush" Color="{StaticResource CostWarnColor}" />
+    <SolidColorBrush x:Key="TrackBrush" Color="{StaticResource TrackColor}" />
+
+    <CornerRadius x:Key="CapsuleCornerRadius">15</CornerRadius>
+    <CornerRadius x:Key="PanelCornerRadius">18</CornerRadius>
+    <CornerRadius x:Key="ChipCornerRadius">8</CornerRadius>
+
+    <FontFamily x:Key="NumericFont">Cascadia Mono, Consolas, Courier New</FontFamily>
+    <FontFamily x:Key="LabelFont">Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI</FontFamily>
+
+    <sys:Double x:Key="FontSizeHero" xmlns:sys="clr-namespace:System;assembly=System.Runtime">22</sys:Double>
+    <sys:Double x:Key="FontSizeValue" xmlns:sys="clr-namespace:System;assembly=System.Runtime">11.5</sys:Double>
+    <sys:Double x:Key="FontSizeLabel" xmlns:sys="clr-namespace:System;assembly=System.Runtime">11</sys:Double>
+    <sys:Double x:Key="FontSizeCaption" xmlns:sys="clr-namespace:System;assembly=System.Runtime">10</sys:Double>
+
+    <!-- 浅色下阴影要更克制，否则显得脏 -->
+    <DropShadowEffect x:Key="OverlayShadow"
+                      BlurRadius="28"
+                      ShadowDepth="0"
+                      Direction="270"
+                      Opacity="0.16"
+                      Color="#000000" />
+
+    <DropShadowEffect x:Key="PanelShadow"
+                      BlurRadius="36"
+                      ShadowDepth="3"
+                      Direction="270"
+                      Opacity="0.2"
+                      Color="#000000" />
+
+</ResourceDictionary>

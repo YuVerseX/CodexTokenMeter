@@ -1,0 +1,82 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+        深色主题设计令牌。
+
+        数值刻意集中在此：颜色、圆角、间距、字号都由令牌驱动，
+        避免散落在 XAML 各处的硬编码。
+
+        配色思路：以 Codex 深色界面为底（近黑偏蓝），
+        用低饱和中性色承载信息，只用两个强调色区分语义：
+        输入输出用蓝、费用用绿。
+    -->
+
+    <!-- 表面：三层递进，用于建立层级 -->
+    <Color x:Key="SurfaceColor">#F2161A21</Color>
+    <Color x:Key="SurfaceElevatedColor">#F21C2029</Color>
+    <Color x:Key="SurfaceSunkenColor">#66101319</Color>
+    <Color x:Key="SurfaceBorderColor">#22FFFFFF</Color>
+    <Color x:Key="SurfaceBorderStrongColor">#33FFFFFF</Color>
+
+    <!-- 文本：三级明度 -->
+    <Color x:Key="TextPrimaryColor">#F2F4F7</Color>
+    <Color x:Key="TextSecondaryColor">#A5AEBE</Color>
+    <Color x:Key="TextMutedColor">#6E7687</Color>
+
+    <!-- 强调 -->
+    <Color x:Key="AccentColor">#6BA5F5</Color>
+    <Color x:Key="AccentSoftColor">#2E6BA5F5</Color>
+    <Color x:Key="CostColor">#5FD9A5</Color>
+    <Color x:Key="CostWarnColor">#F2B860</Color>
+    <Color x:Key="TrackColor">#1FFFFFFF</Color>
+
+    <SolidColorBrush x:Key="SurfaceBrush" Color="{StaticResource SurfaceColor}" />
+    <SolidColorBrush x:Key="SurfaceElevatedBrush" Color="{StaticResource SurfaceElevatedColor}" />
+    <SolidColorBrush x:Key="SurfaceSunkenBrush" Color="{StaticResource SurfaceSunkenColor}" />
+    <SolidColorBrush x:Key="SurfaceBorderBrush" Color="{StaticResource SurfaceBorderColor}" />
+    <SolidColorBrush x:Key="SurfaceBorderStrongBrush" Color="{StaticResource SurfaceBorderStrongColor}" />
+    <SolidColorBrush x:Key="TextPrimaryBrush" Color="{StaticResource TextPrimaryColor}" />
+    <SolidColorBrush x:Key="TextSecondaryBrush" Color="{StaticResource TextSecondaryColor}" />
+    <SolidColorBrush x:Key="TextMutedBrush" Color="{StaticResource TextMutedColor}" />
+    <SolidColorBrush x:Key="AccentBrush" Color="{StaticResource AccentColor}" />
+    <SolidColorBrush x:Key="AccentSoftBrush" Color="{StaticResource AccentSoftColor}" />
+    <SolidColorBrush x:Key="CostBrush" Color="{StaticResource CostColor}" />
+    <SolidColorBrush x:Key="CostWarnBrush" Color="{StaticResource CostWarnColor}" />
+    <SolidColorBrush x:Key="TrackBrush" Color="{StaticResource TrackColor}" />
+
+    <!-- 圆角：胶囊用全圆角，面板用较大圆角 -->
+    <CornerRadius x:Key="CapsuleCornerRadius">15</CornerRadius>
+    <CornerRadius x:Key="PanelCornerRadius">18</CornerRadius>
+    <CornerRadius x:Key="ChipCornerRadius">8</CornerRadius>
+
+    <!--
+        字体。
+        Cascadia Mono 用于数值：等宽字形让数字变化时不产生宽度跳动。
+        回退顺序保证在不同系统上都能得到近似效果。
+    -->
+    <FontFamily x:Key="NumericFont">Cascadia Mono, Consolas, Courier New</FontFamily>
+    <FontFamily x:Key="LabelFont">Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI</FontFamily>
+
+    <!-- 字号阶梯：建立清晰的信息层级 -->
+    <sys:Double x:Key="FontSizeHero" xmlns:sys="clr-namespace:System;assembly=System.Runtime">22</sys:Double>
+    <sys:Double x:Key="FontSizeValue" xmlns:sys="clr-namespace:System;assembly=System.Runtime">11.5</sys:Double>
+    <sys:Double x:Key="FontSizeLabel" xmlns:sys="clr-namespace:System;assembly=System.Runtime">11</sys:Double>
+    <sys:Double x:Key="FontSizeCaption" xmlns:sys="clr-namespace:System;assembly=System.Runtime">10</sys:Double>
+
+    <!-- 阴影：柔和外扩，不是硬边 -->
+    <DropShadowEffect x:Key="OverlayShadow"
+                      BlurRadius="32"
+                      ShadowDepth="0"
+                      Direction="270"
+                      Opacity="0.55"
+                      Color="#000000" />
+
+    <DropShadowEffect x:Key="PanelShadow"
+                      BlurRadius="40"
+                      ShadowDepth="3"
+                      Direction="270"
+                      Opacity="0.6"
+                      Color="#000000" />
+
+</ResourceDictionary>

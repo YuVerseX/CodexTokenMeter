@@ -1,0 +1,18 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CodexTokenMeter.App/CodexTokenMeter.App.csproj" />
+    <Project Path="src/CodexTokenMeter.Core/CodexTokenMeter.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CodexTokenMeter.Core.Tests/CodexTokenMeter.Core.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/CodexTokenMeter.FollowCheck/CodexTokenMeter.FollowCheck.csproj" />
+    <Project Path="tools/CodexTokenMeter.GeometryCheck/CodexTokenMeter.GeometryCheck.csproj" />
+    <Project Path="tools/CodexTokenMeter.ImageCheck/CodexTokenMeter.ImageCheck.csproj" />
+    <Project Path="tools/CodexTokenMeter.IpcProbe/CodexTokenMeter.IpcProbe.csproj" />
+    <Project Path="tools/CodexTokenMeter.Probe/CodexTokenMeter.Probe.csproj" />
+    <Project Path="tools/CodexTokenMeter.Screenshot/CodexTokenMeter.Screenshot.csproj" />
+    <Project Path="tools/CodexTokenMeter.WindowProbe/CodexTokenMeter.WindowProbe.csproj" />
+  </Folder>
+</Solution>

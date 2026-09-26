@@ -1,0 +1,37 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\CodexTokenMeter.Core\CodexTokenMeter.Core.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <!-- 托盘图标需要 WinForms 的 NotifyIcon；WPF 无内置托盘 API。 -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <!--
+      不使用 WinForms 的全局 using：它与 WPF 在 Application、Point、
+      Size、Brush、NativeWindow 等名称上大量冲突。托盘文件显式引入所需类型。
+    -->
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>CodexTokenMeter</AssemblyName>
+    <RootNamespace>CodexTokenMeter.App</RootNamespace>
+    <Version>0.1.0</Version>
+    <Description>Codex Desktop 的只读 token 用量与费用浮层。</Description>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+  </PropertyGroup>
+
+  <!-- WPF 与文件系统所需的常用命名空间，显式声明以避免 WinForms 干扰。 -->
+  <ItemGroup>
+    <Using Include="System" />
+    <Using Include="System.Collections.Generic" />
+    <Using Include="System.IO" />
+    <Using Include="System.Linq" />
+    <Using Include="System.Threading" />
+    <Using Include="System.Threading.Tasks" />
+  </ItemGroup>
+
+</Project>

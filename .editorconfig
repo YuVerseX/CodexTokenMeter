@@ -1,0 +1,86 @@
+# 代码分析配置
+#
+# 说明：静态分析开在较严水平（见 Directory.Build.props），
+# 因此需要显式说明哪些规则不适用于本项目，避免噪音淹没真问题。
+#
+# 每条抑制都应写明理由。没有理由的抑制会让后来者无法判断
+# 是「确实不适用」还是「图省事跳过」。
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = crlf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{csproj,props,targets,json,xaml,md}]
+indent_size = 2
+
+[*.cs]
+# 中文字符串常量是产品文案的一部分，不是本地化疏漏。
+# 本项目不打算做多语言，界面文案直接写在代码与 XAML 中。
+dotnet_diagnostic.CA1303.severity = none
+
+# ─────────────────────────────────────────────────────────────
+# 测试项目
+# ─────────────────────────────────────────────────────────────
+
+[tests/**/*.cs]
+
+# 测试方法名用下划线分隔「被测对象_场景_预期」，
+# 这是 xUnit 生态的通行写法，可读性明显优于驼峰长句。
+dotnet_diagnostic.CA1707.severity = none
+
+# IpcCollection 是 xUnit 的集合定义，不是集合类型，命名合理。
+dotnet_diagnostic.CA1711.severity = none
+
+# 测试里 DateTimeOffset.Parse("...") 的输入都是 ISO 8601 字面量，
+# 不含区域相关格式，不受当前区域设置影响。
+dotnet_diagnostic.CA1305.severity = none
+
+# 测试类的 Dispose 不会派生，无需 SuppressFinalize。
+dotnet_diagnostic.CA1816.severity = none
+
+# ─────────────────────────────────────────────────────────────
+# 开发期工具项目
+# ─────────────────────────────────────────────────────────────
+#
+# 这些项目是一次性诊断脚本，不参与发布，命名与结构无需按库的规范要求。
+
+[tools/**/*.cs]
+dotnet_diagnostic.CA1707.severity = none
+dotnet_diagnostic.CA1711.severity = none
+dotnet_diagnostic.CA1305.severity = none
+
+# 工具大量直接调用 Win32 做诊断，返回值有意忽略的场景很常见。
+dotnet_diagnostic.CA1806.severity = none
+
+# 诊断工具的输出是给人看的，不追求零分配与最高性能。
+dotnet_diagnostic.CA1838.severity = none
+dotnet_diagnostic.CA1859.severity = none
+dotnet_diagnostic.CA1001.severity = none
+
+# ─────────────────────────────────────────────────────────────
+# 主程序：逐条说明的抑制
+# ─────────────────────────────────────────────────────────────
+
+[src/CodexTokenMeter.App/App.xaml.cs]
+
+# App 持有可释放资源，但 WPF 不会为 Application 调用 Dispose，
+# 全部资源在 OnExit 中释放。实现 IDisposable 永远不会被触发，
+# 反而造成「已妥善处理」的错觉。
+dotnet_diagnostic.CA1001.severity = none
+
+# main 的参数类型由入口点签名决定，不能改成 string[]。
+dotnet_diagnostic.CA1859.severity = none
+
+[src/CodexTokenMeter.Core/Windowing/NativeWindow.cs]
+
+# 多个 Win32 调用的返回值是有意忽略的：
+# DwmSetWindowAttribute 在旧版 Windows 上必然失败（该属性不存在），
+# 而这只是外观偏好；GetWindowThreadProcessId 的返回值是线程 id，
+# 进程 id 由 out 参数给出，且已有针对 0 的判断。
+dotnet_diagnostic.CA1806.severity = none

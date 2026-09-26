@@ -1,0 +1,18 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>CodexTokenMeter.Core</RootNamespace>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 解析与计费的内部实现需要被单元测试直接覆盖。 -->
+    <InternalsVisibleTo Include="CodexTokenMeter.Core.Tests" />
+    <!-- 应用层需要会话路径解析等内部工具。 -->
+    <InternalsVisibleTo Include="CodexTokenMeter.App" />
+  </ItemGroup>
+
+</Project>

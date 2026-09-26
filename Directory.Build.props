@@ -1,0 +1,36 @@
+<Project>
+
+  <!--
+    全仓库共享的编译设置。
+
+    这里刻意把静态分析开到较严的水平：
+    浮层是常驻后台进程，且大量使用 P/Invoke 与资源句柄，
+    这类代码的正确性问题（句柄泄漏、竞态、空引用）在运行时才暴露，
+    而静态分析能在编译期就抓出来。
+
+    TreatWarningsAsErrors 不开启：开发期的工具项目（tools/）
+    偶有刻意的简化，强制报错会打断探索性的诊断流程。
+    取而代之的是「0 警告」作为验收标准（见 scripts/Publish-App.ps1）。
+  -->
+
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- 分析器：.NET 官方推荐规则集 + 全部性能规则 -->
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <AnalysisMode>All</AnalysisMode>
+
+    <!-- 不让规则集随 SDK 升级悄悄变化 -->
+    <AnalysisModeGlobalization>All</AnalysisModeGlobalization>
+
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+
+    <WarningsAsErrors>nullable</WarningsAsErrors>
+    <WarningLevel>9999</WarningLevel>
+  </PropertyGroup>
+
+</Project>
