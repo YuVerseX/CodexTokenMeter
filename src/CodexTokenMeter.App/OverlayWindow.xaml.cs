@@ -1037,6 +1037,10 @@ public partial class OverlayWindow : Window
             // 价格表问题优先展示：它会让所有费用数字不可信，
             // 比“未定价”或“数据不完整”更严重。
             { PricingWarning: { } pricing } => pricing,
+
+            // 饱和值的含义是“日志里的数值异常”，
+            // 比“未读完”更值得提醒。
+            { IsSaturated: true } => "统计数值异常（已饱和），日志可能损坏",
             { IsUnpriced: true, Model: { } model } => $"该模型未收录价格，费用不可用：{model}",
             { IsPartial: true } => "日志尚未读完，数值可能偏低",
             { IsConnected: false } => "未连接 Codex，显示的是最后一次已知数据",

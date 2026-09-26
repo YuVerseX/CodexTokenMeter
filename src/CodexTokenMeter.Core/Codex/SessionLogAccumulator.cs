@@ -261,7 +261,12 @@ internal sealed class SessionLogAccumulator
         });
 
         var totals = TokenTotals.From(usage);
-        _cumulative = _cumulative.Add(totals);
+
+        // 用饱和累加而非普通加法。
+        //
+        // 数值来自外部日志文件，可能被截断或损坏。
+        // 普通加法会回绕为负数，而负的累计值会让费用也算成负数。
+        _cumulative = TokenTotals.AddSaturating(_cumulative, totals);
 
         if (!string.Equals(_currentTurnId, turnId, StringComparison.Ordinal))
         {
@@ -271,7 +276,7 @@ internal sealed class SessionLogAccumulator
         }
         else
         {
-            _currentTurn = _currentTurn.Add(totals);
+            _currentTurn = TokenTotals.AddSaturating(_currentTurn, totals);
             _currentTurnCallCount++;
         }
     }

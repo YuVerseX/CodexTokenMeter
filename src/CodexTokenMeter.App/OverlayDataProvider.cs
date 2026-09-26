@@ -64,6 +64,16 @@ public sealed record OverlayData
     /// <summary>模型未收录价格时为 true，此时费用不可用。</summary>
     public bool IsUnpriced { get; init; }
 
+    /// <summary>
+    /// token 计数达到饱和值。
+    /// </summary>
+    /// <remarks>
+    /// 会话日志里的数值异常巨大时会饱和到 <see cref="long.MaxValue"/>。
+    /// 上层据此提示「统计异常」，而不是把一个大得离谱的数字
+    /// 当作真实用量展示。
+    /// </remarks>
+    public bool IsSaturated { get; init; }
+
     /// <summary>IPC 是否已连接。</summary>
     public bool IsConnected { get; init; }
 
@@ -223,6 +233,7 @@ public sealed class OverlayDataProvider : IDisposable
             CompactionCount = snapshot.CompactionCount,
             IsPartial = metrics.IsPartial,
             IsUnpriced = cost.UnknownModels.Count > 0 || cost.TotalCount == 0,
+            IsSaturated = metrics.Cumulative.IsSaturated || metrics.CurrentTurn.IsSaturated,
             IsConnected = status.IsConnected,
             PricingWarning = _pricingWarning,
         });

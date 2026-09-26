@@ -36,6 +36,10 @@ public readonly record struct TokenTotals
     };
 
     /// <summary>逐项相加。用于增量累加，避免每次都重新遍历全部记录。</summary>
+    /// <remarks>
+    /// 不做溢出检查。调用方在累加外部数据时应改用
+    /// <see cref="AddSaturating"/>，见其说明。
+    /// </remarks>
     public TokenTotals Add(TokenTotals other) => new()
     {
         Input = Input + other.Input,
@@ -45,6 +49,60 @@ public readonly record struct TokenTotals
         ReasoningOutput = ReasoningOutput + other.ReasoningOutput,
         Total = Total + other.Total,
     };
+
+    /// <summary>
+    /// 逐项相加，负数归零且溢出时饱和。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 会话日志来自外部文件，可能被截断、损坏或构造。
+    /// 未经防护的加法在两个方向上都不可靠：
+    /// 负数会传播（使累计值变小甚至为负），
+    /// 而超过 <see cref="long.MaxValue"/> 会回绕为负数。
+    /// </para>
+    /// <para>
+    /// 负的累计值会让费用算出负数，用户会认为程序算错了。
+    /// 饱和后值偏大，但偏大的含义是“统计异常”，而负值没有含义。
+    /// 调用方可用 <see cref="IsSaturated"/> 判断并提示。
+    /// </para>
+    /// </remarks>
+    public static TokenTotals AddSaturating(TokenTotals left, TokenTotals right) => new()
+    {
+        Input = Saturate(left.Input, right.Input),
+        CachedInput = Saturate(left.CachedInput, right.CachedInput),
+        CacheWriteInput = Saturate(left.CacheWriteInput, right.CacheWriteInput),
+        Output = Saturate(left.Output, right.Output),
+        ReasoningOutput = Saturate(left.ReasoningOutput, right.ReasoningOutput),
+        Total = Saturate(left.Total, right.Total),
+    };
+
+    /// <summary>
+    /// 任一字段已达饱和值。
+    /// </summary>
+    /// <remarks>
+    /// 用于把「统计异常」与「用量真的很大」区分开：
+    /// <see cref="long.MaxValue"/> 作为 token 数是不可能的。
+    /// </remarks>
+    public bool IsSaturated =>
+        Input == long.MaxValue
+        || CachedInput == long.MaxValue
+        || CacheWriteInput == long.MaxValue
+        || Output == long.MaxValue
+        || ReasoningOutput == long.MaxValue
+        || Total == long.MaxValue;
+
+    /// <summary>
+    /// 相加两个计数：负数归零，溢出饱和。
+    /// </summary>
+    private static long Saturate(long left, long right)
+    {
+        var a = Math.Max(0, left);
+        var b = Math.Max(0, right);
+
+        // 用减法判断是否溢出，避免 checked 块的异常开销：
+        // 本方法在逐条累加的热路径上被调用。
+        return a > long.MaxValue - b ? long.MaxValue : a + b;
+    }
 
     /// <summary>
     /// 未命中缓存的输入部分。
