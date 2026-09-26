@@ -106,6 +106,7 @@ public sealed class OverlayDataProvider : IDisposable
 {
     private readonly CodexIpcMonitor _ipc;
     private readonly SessionLogMonitor _logMonitor = new();
+    private readonly SessionLogLocator _locator = new();
     private readonly PricingCatalog _catalog;
     private readonly string _sessionsRoot;
     private readonly double _rateMultiplier;
@@ -240,6 +241,8 @@ public sealed class OverlayDataProvider : IDisposable
             _activeLogPath = null;
             _logMonitor.Reset();
         }
+
+        _locator.Invalidate();
     }
 
     public void Dispose()
@@ -338,9 +341,9 @@ public sealed class OverlayDataProvider : IDisposable
         }
 
         // 按日期倒序定位，避免全盘遍历。
-        // 实测 3000 个文件全量扫描 84 ms（UI 线程上会卡顿），
-        // 按日期定位只要 0.9 ms。
-        var best = SessionLogLocator.Locate(_sessionsRoot, threadId);
+        // 实测 3650 个文件全量扫描 109 ms（UI 线程上会卡顿），
+        // 按日期定位只要 0.125 ms。
+        var best = _locator.Locate(_sessionsRoot, threadId);
         var pathChanged = false;
 
         lock (_sync)

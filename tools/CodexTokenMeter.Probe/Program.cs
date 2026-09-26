@@ -978,7 +978,10 @@ static int RunLocatorPerfProbe()
         Console.WriteLine();
 
         Console.WriteLine("=== B. 优化后：按日期倒序定位 ===");
-        var after = MeasureOp(() => SessionLogLocator.Locate(root, ThreadId), 20);
+
+        // 定位器持有缓存，应当长期复用同一个实例。
+        var locator = new SessionLogLocator();
+        var after = MeasureOp(() => locator.Locate(root, ThreadId), 20);
         Console.WriteLine($"  中位数 {after.Median:F3} ms   最慢 {after.Max:F3} ms");
         Console.WriteLine();
 

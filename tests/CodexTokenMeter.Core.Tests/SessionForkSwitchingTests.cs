@@ -20,6 +20,7 @@ namespace CodexTokenMeter.Core.Tests;
 public class SessionForkSwitchingTests : IDisposable
 {
     private readonly string _root;
+    private readonly SessionLogLocator _locator = new();
     private static readonly DateTime Today = new(2026, 9, 26, 15, 30, 0, DateTimeKind.Local);
 
     private const string ThreadId = "01a0d656-cf19-7532-af4a-f089fc3163ed";
@@ -117,7 +118,7 @@ public class SessionForkSwitchingTests : IDisposable
         Assert.Equal(1_000_000, SessionMetrics.Create(parentSnapshot).Cumulative.Total);
 
         // 第二步：定位到分叉文件（模拟 2 秒复查后发现了新文件）。
-        var located = SessionLogLocator.Locate(_root, ThreadId, Today);
+        var located = _locator.Locate(_root, ThreadId, Today);
         Assert.Equal(forkPath, located);
 
         // 第三步：切换到分叉文件，累计必须**只**反映分叉自己的记录。
@@ -219,7 +220,7 @@ public class SessionForkSwitchingTests : IDisposable
             $"rollout-{yesterday:yyyy-MM-dd}T10-00-00-{ThreadId}.jsonl",
             UsageLine("turn-a", 1_000, 0));
 
-        Assert.Equal(parentPath, SessionLogLocator.Locate(_root, ThreadId, Today));
+        Assert.Equal(parentPath, _locator.Locate(_root, ThreadId, Today));
     }
 
     [Fact]
@@ -232,7 +233,7 @@ public class SessionForkSwitchingTests : IDisposable
             $"rollout-{yesterday:yyyy-MM-dd}T10-00-00-{ThreadId}.jsonl",
             UsageLine("turn-a", 1_000, 0));
 
-        Assert.Equal(parentPath, SessionLogLocator.Locate(_root, ThreadId, Today));
+        Assert.Equal(parentPath, _locator.Locate(_root, ThreadId, Today));
 
         // 分叉出现。
         var forkPath = WriteLog(
@@ -240,7 +241,11 @@ public class SessionForkSwitchingTests : IDisposable
             $"rollout-{Today:yyyy-MM-dd}T16-00-00-{ThreadId}_{ChildId}.jsonl",
             UsageLine("turn-b", 2_000, 0));
 
-        // 复查必须发现它。
-        Assert.Equal(forkPath, SessionLogLocator.Locate(_root, ThreadId, Today));
+        // 定位器内部有短时缓存（避免频繁扫描），因此刚创建的分叉
+        // 不会立即被发现，而是等缓存过期后。
+        // 这个延迟上限决定了用户感知到的「跟随滞后」，因此显式验证。
+        Thread.Sleep(1200);
+
+        Assert.Equal(forkPath, _locator.Locate(_root, ThreadId, Today));
     }
 }

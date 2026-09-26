@@ -13,6 +13,7 @@ namespace CodexTokenMeter.Core.Tests;
 public class SessionLogLocatorTests : IDisposable
 {
     private readonly string _root;
+    private readonly SessionLogLocator _locator = new();
 
     /// <summary>固定「今天」，避免测试跨午夜时不稳定。</summary>
     private static readonly DateTime Today = new(2026, 9, 26, 15, 30, 0, DateTimeKind.Local);
@@ -70,7 +71,7 @@ public class SessionLogLocatorTests : IDisposable
     [Fact]
     public void ReturnsNullForMissingRoot()
     {
-        Assert.Null(SessionLogLocator.Locate(
+        Assert.Null(_locator.Locate(
             Path.Combine(_root, "不存在"),
             ThreadId,
             Today));
@@ -81,7 +82,7 @@ public class SessionLogLocatorTests : IDisposable
     [InlineData("   ")]
     public void ReturnsNullForBlankThreadId(string threadId)
     {
-        Assert.Null(SessionLogLocator.Locate(_root, threadId, Today));
+        Assert.Null(_locator.Locate(_root, threadId, Today));
     }
 
     [Fact]
@@ -89,7 +90,7 @@ public class SessionLogLocatorTests : IDisposable
     {
         var path = CreateLog(Today, PlainName(Today));
 
-        Assert.Equal(path, SessionLogLocator.Locate(_root, ThreadId, Today));
+        Assert.Equal(path, _locator.Locate(_root, ThreadId, Today));
     }
 
     [Fact]
@@ -99,7 +100,7 @@ public class SessionLogLocatorTests : IDisposable
         var yesterday = Today.AddDays(-1);
         var path = CreateLog(yesterday, PlainName(yesterday));
 
-        Assert.Equal(path, SessionLogLocator.Locate(_root, ThreadId, Today));
+        Assert.Equal(path, _locator.Locate(_root, ThreadId, Today));
     }
 
     [Fact]
@@ -111,7 +112,7 @@ public class SessionLogLocatorTests : IDisposable
 
         var todayPath = CreateLog(Today, PlainName(Today), Today);
 
-        Assert.Equal(todayPath, SessionLogLocator.Locate(_root, ThreadId, Today));
+        Assert.Equal(todayPath, _locator.Locate(_root, ThreadId, Today));
     }
 
     [Fact]
@@ -122,7 +123,7 @@ public class SessionLogLocatorTests : IDisposable
 
         var forkPath = CreateLog(Today, ForkName(Today), Today);
 
-        Assert.Equal(forkPath, SessionLogLocator.Locate(_root, ThreadId, Today));
+        Assert.Equal(forkPath, _locator.Locate(_root, ThreadId, Today));
     }
 
     [Fact]
@@ -135,7 +136,7 @@ public class SessionLogLocatorTests : IDisposable
 
         var forkPath = CreateLog(Today, ForkName(Today), Today);
 
-        Assert.Equal(forkPath, SessionLogLocator.Locate(_root, ThreadId, Today));
+        Assert.Equal(forkPath, _locator.Locate(_root, ThreadId, Today));
     }
 
     [Fact]
@@ -148,7 +149,7 @@ public class SessionLogLocatorTests : IDisposable
             Path.Combine(todayDir, $"rollout-2026-09-26T10-00-00-{other}.jsonl"),
             "{}");
 
-        Assert.Null(SessionLogLocator.Locate(_root, ThreadId, Today));
+        Assert.Null(_locator.Locate(_root, ThreadId, Today));
     }
 
     [Fact]
@@ -158,7 +159,7 @@ public class SessionLogLocatorTests : IDisposable
         Directory.CreateDirectory(todayDir);
         File.WriteAllText(Path.Combine(todayDir, $"config-{ThreadId}.jsonl"), "{}");
 
-        Assert.Null(SessionLogLocator.Locate(_root, ThreadId, Today));
+        Assert.Null(_locator.Locate(_root, ThreadId, Today));
     }
 
     [Fact]
@@ -168,7 +169,7 @@ public class SessionLogLocatorTests : IDisposable
         var ancient = Today.AddDays(-(SessionLogLocator.MaxLookbackDays + 30));
         var path = CreateLog(ancient, PlainName(ancient));
 
-        Assert.Equal(path, SessionLogLocator.Locate(_root, ThreadId, Today));
+        Assert.Equal(path, _locator.Locate(_root, ThreadId, Today));
     }
 
     [Fact]
@@ -178,7 +179,7 @@ public class SessionLogLocatorTests : IDisposable
         var threeDaysAgo = Today.AddDays(-3);
         var path = CreateLog(threeDaysAgo, PlainName(threeDaysAgo));
 
-        Assert.Equal(path, SessionLogLocator.Locate(_root, ThreadId, Today));
+        Assert.Equal(path, _locator.Locate(_root, ThreadId, Today));
     }
 
     [Fact]
@@ -190,7 +191,7 @@ public class SessionLogLocatorTests : IDisposable
 
         var path = CreateLog(lastOfPrevious, PlainName(lastOfPrevious));
 
-        Assert.Equal(path, SessionLogLocator.Locate(_root, ThreadId, firstOfMonth));
+        Assert.Equal(path, _locator.Locate(_root, ThreadId, firstOfMonth));
     }
 
     [Fact]
@@ -201,7 +202,7 @@ public class SessionLogLocatorTests : IDisposable
 
         var path = CreateLog(lastOfPrevious, PlainName(lastOfPrevious));
 
-        Assert.Equal(path, SessionLogLocator.Locate(_root, ThreadId, firstOfYear));
+        Assert.Equal(path, _locator.Locate(_root, ThreadId, firstOfYear));
     }
 
     [Fact]
@@ -222,7 +223,7 @@ public class SessionLogLocatorTests : IDisposable
             targetDay);
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        var found = SessionLogLocator.Locate(_root, ThreadId, Today);
+        var found = _locator.Locate(_root, ThreadId, Today);
         sw.Stop();
 
         Assert.Equal(target, found);
