@@ -157,6 +157,8 @@ internal static class SelfCheck
                 or System.ComponentModel.Win32Exception
                 or NotSupportedException)
             {
+                // 系统进程或权限不足的进程无法读取模块路径。
+                // 它们不可能是 Codex，跳过即可，不应中断整轮枚举。
             }
             finally
             {
