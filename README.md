@@ -426,6 +426,7 @@ Win32 的窗口矩形是**物理像素**，而 WPF 的 `Left/Top/Width/Height` �
 | `--self-check` | 自动验证定位、尺寸、数据链路并输出报告 |
 | `--check-placement` | 只报告锚点与偏移下的预期/实际位置，用于排查「设置改了但位置没变」 |
 | `--start-expanded` | 启动后自动展开面板，便于截图 |
+| `--theme-stress` | 反复切换主题后报告合并字典数量，验证不累积 |
 | `--metrics a,b,c` | 指定胶囊指标，便于验证任意组合的渲染 |
 | `--dump-settings` | 打印解析后的设置后退出，不依赖 Codex 是否运行 |
 | `--toggle-metric <键名>` | 模拟菜单勾选一项后退出，验证持久化链路 |
