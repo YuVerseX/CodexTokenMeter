@@ -45,35 +45,49 @@ public class RealSessionInvariantTests
     /// <para>
     /// 这些测试断言的是完成态会话的不变量，而日志是逐行追加的：
     /// 先写 usage record，后写 token_count。读取恰好落在两者之间时，
-    /// 会看到「无压缩却有差异」的假象（实测偶发）。
+    /// 会看到「无压缩却有差异」的假象。
     /// </para>
     /// <para>
-    /// 不用「几秒内无写入」这类时间启发式：那只是猜测，实测仍会偶发失败。
-    /// 改为比对读取前后的文件大小与写入时间——两次元数据完全一致时，
-    /// 才能确信读到的是一份完整快照。文件正在写入就跳过，而不是拿
-    /// 一份撕裂的快照去断言。
+    /// 不能用「几秒内无写入」这类时间启发式：那只是猜测。
+    /// 也不能只比对文件元数据：写入可能在读取开始前就已落盘且元数据已更新，
+    /// 但两份记录尚未配齐（实测该写法仍会偶发失败）。
+    /// </para>
+    /// <para>
+    /// 改为**内容级一致性**：连读两次，两者完全一致才认为文件已静止。
+    /// 这直接验证了「没有处于写入中间状态」，而不是去推测。
+    /// 代价是读取次数翻倍；这些测试只在本地有会话日志时运行，可以接受。
     /// </para>
     /// </remarks>
     private static SessionSnapshot? ReadStable(string logPath)
     {
-        var info = new FileInfo(logPath);
-        if (!info.Exists)
+        if (!File.Exists(logPath))
         {
             return null;
         }
 
-        var sizeBefore = info.Length;
-        var writeBefore = info.LastWriteTimeUtc;
+        var first = SessionLogReader.Read(logPath);
+        var second = SessionLogReader.Read(logPath);
 
-        var snapshot = SessionLogReader.Read(logPath);
-
-        info.Refresh();
-
-        // 元数据变了说明读取期间文件被追加，快照可能截断在两次写入之间。
-        return !info.Exists || info.Length != sizeBefore || info.LastWriteTimeUtc != writeBefore
-            ? null
-            : snapshot;
+        // 两次结果不一致：文件在读取期间发生了变化，无法断定哪一次是完整的。
+        return AreEquivalent(first, second) ? second : null;
     }
+
+    /// <summary>
+    /// 判断两份快照是否描述同一份内容。
+    /// </summary>
+    /// <remarks>
+    /// 只比对与不变量相关的字段，而不是整个对象：
+    /// 时间戳等字段在两次读取间可能因系统时钟精度而不同。
+    /// </remarks>
+    private static bool AreEquivalent(SessionSnapshot left, SessionSnapshot right) =>
+        left.ThreadId == right.ThreadId
+        && left.UsageRecords.Count == right.UsageRecords.Count
+        && left.TokenCounts.Count == right.TokenCounts.Count
+        && left.CompactionCount == right.CompactionCount
+        && left.Cumulative == right.Cumulative
+        && left.CurrentTurn == right.CurrentTurn
+        && left.CurrentTurnCallCount == right.CurrentTurnCallCount
+        && left.UnreadableLineCount == right.UnreadableLineCount;
 
     [Fact]
     public void RealSessions_ParseWithoutError()

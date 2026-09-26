@@ -18,6 +18,11 @@ if (args.Length > 0 && args[0] == "--ipc")
     return await VerifyIpcAsync(args.Length > 1 ? args[1] : null);
 }
 
+if (args.Length > 0 && args[0] == "guard")
+{
+    return RunGuardProbe();
+}
+
 if (args.Length > 0 && args[0] == "locator-perf")
 {
     return RunLocatorPerfProbe();
@@ -1049,4 +1054,62 @@ static void FullScanAgain(string root, string threadId)
 
     _ = best;
     _ = threadId;
+}
+
+/// <summary>验证内容级一致性守卫在写入期间会拒绝。</summary>
+static int RunGuardProbe()
+{
+    var path = Path.Combine(Path.GetTempPath(), $"ctm-guard-{Guid.NewGuid():N}.jsonl");
+    const string Line = "{\"timestamp\":\"2026-09-26T10:00:00Z\",\"type\":\"token_usage_record\",\"payload\":{\"turn_id\":\"t1\",\"usage\":{\"input_tokens\":100,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":10,\"reasoning_output_tokens\":0,\"total_tokens\":110}}}";
+
+    File.WriteAllText(path, Line + Environment.NewLine);
+
+    var accepted = 0;
+    var rejected = 0;
+    var stop = false;
+
+    var writer = new Thread(() =>
+    {
+        while (!stop)
+        {
+            try { File.AppendAllText(path, Line + Environment.NewLine); }
+            catch (IOException) { }
+            Thread.Sleep(1);
+        }
+    });
+    writer.Start();
+
+    try
+    {
+        for (var round = 0; round < 300; round++)
+        {
+            if (!File.Exists(path)) { continue; }
+
+            var first = SessionLogReader.Read(path);
+            var second = SessionLogReader.Read(path);
+
+            if (first.UsageRecords.Count == second.UsageRecords.Count
+                && first.Cumulative == second.Cumulative)
+            {
+                accepted++;
+            }
+            else
+            {
+                rejected++;
+            }
+        }
+    }
+    finally
+    {
+        stop = true;
+        writer.Join();
+        File.Delete(path);
+    }
+
+    Console.WriteLine($"  接受 {accepted} 次，拒绝 {rejected} 次");
+    Console.WriteLine(rejected > 0
+        ? "  结论：守卫在写入期间正确拒绝，机制有效。"
+        : "  结论：守卫从未拒绝 —— 可能失效。");
+
+    return 0;
 }
