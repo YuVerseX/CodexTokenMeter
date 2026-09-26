@@ -76,11 +76,10 @@ internal static class SelfCheck
             return null;
         }
 
-        return NativeWindow
-            .EnumerateTopLevelWindows(codexProcessIds.Contains)
-            .Where(item => item.IsCodexProcess && item.IsVisible && CodexWindowSelector.IsHostCandidate(item))
-            .OrderByDescending(item => (long)item.Bounds.Width * item.Bounds.Height)
-            .FirstOrDefault();
+        // 选路复用 CodexWindowSelector：与运行时使用同一套规则，
+        // 否则自检“通过”不能说明运行时也能选对窗口。
+        return CodexWindowSelector.SelectLargest(
+            NativeWindow.EnumerateTopLevelWindows(codexProcessIds.Contains));
     }
 
     /// <summary>
@@ -104,6 +103,9 @@ internal static class SelfCheck
         }
 
         // 找出被最小化的 Codex 主窗口并恢复它。
+        //
+        // 这里不能用 SelectLargest：它排除最小化窗口（最小化时坐标是
+        // -32000，不能作为宿主）。而本方法的目的正是找到并恢复那个窗口。
         var minimized = NativeWindow
             .EnumerateTopLevelWindows(codexProcessIds.Contains)
             .Where(item => item.IsCodexProcess
@@ -113,6 +115,7 @@ internal static class SelfCheck
                     CodexWindowSelector.ChromiumTopLevelClass,
                     StringComparison.Ordinal))
             .OrderByDescending(item => (long)item.Bounds.Width * item.Bounds.Height)
+            .ThenBy(item => item.Handle)
             .FirstOrDefault();
 
         if (minimized is null)
