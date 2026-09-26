@@ -400,7 +400,7 @@ public partial class App : Application
             Report($"  锚点={_settings.Anchor}  偏移=({_settings.OffsetX},{_settings.OffsetY})  "
                 + $"边距={_settings.Margin}  顶部内缩={_settings.TopInset}");
             Report($"  预期位置(DIP)=({placement.Bounds.Left},{placement.Bounds.Top})  "
-                + $"实际位置(DIP)=({_window.Left:F0},{_window.Top:F0})");
+                + $"实际位置(DIP)=({Num(_window.Left)},{Num(_window.Top)})");
             Report($"  位置一致={Math.Abs(_window.Left - placement.Bounds.Left) <= 1
                 && Math.Abs(_window.Top - placement.Bounds.Top) <= 1}");
             Report($"  允许拖动={_settings.AllowDrag}");
@@ -810,13 +810,13 @@ public partial class App : Application
                 && Math.Abs(_window.ActualHeight - Math.Ceiling(size.Height)) <= 1;
 
             Report($"  窗口可见={_window.IsVisible}  " +
-                   $"缩放={scale:F2}x  " +
-                   $"位置(DIP)=({_window.Left:F0},{_window.Top:F0})");
-            Report($"  内容尺寸={size.Width:F1}x{size.Height:F1}  " +
-                   $"窗口尺寸={_window.ActualWidth:F0}x{_window.ActualHeight:F0}  " +
+                   $"缩放={Num(scale, 2)}x  " +
+                   $"位置(DIP)=({Num(_window.Left)},{Num(_window.Top)})");
+            Report($"  内容尺寸={Num(size.Width, 1)}x{Num(size.Height, 1)}  " +
+                   $"窗口尺寸={Num(_window.ActualWidth)}x{Num(_window.ActualHeight)}  " +
                    $"尺寸一致={sizeMatches}");
-            Report($"  浮层物理位置=({overlayLeft:F0},{overlayTop:F0})-({overlayRight:F0},{overlayBottom:F0})");
-            Report($"  在宿主内={inside}  距右边缘={host.Bounds.Right - overlayRight:F0} 像素");
+            Report($"  浮层物理位置=({Num(overlayLeft)},{Num(overlayTop)})-({Num(overlayRight)},{Num(overlayBottom)})");
+            Report($"  在宿主内={inside}  距右边缘={Num(host.Bounds.Right - overlayRight)} 像素");
 
             var data = _provider?.Current;
             Report($"  数据：会话={data?.ThreadId ?? "(无)"}");
@@ -825,9 +825,9 @@ public partial class App : Application
                 + $"路径={data?.WorkingDirectory ?? "(无)"}");
             Report($"  模型={data?.Model ?? "(无)"}  " +
                    $"本轮={data?.CurrentTurn.Total:N0} 累计={data?.Cumulative.Total:N0}");
-            Report($"  费用：本轮=${data?.CurrentTurnCost:F6}  累计=${data?.TotalCost:F6}");
-            Report($"  上下文={(data is null ? 0 : data.ContextPercent):F1}%  " +
-                   $"缓存命中率={(data is null ? 0 : data.CacheHitRate):F1}%");
+            Report($"  费用：本轮=${Num(data?.CurrentTurnCost ?? 0, 6)}  累计=${Num(data?.TotalCost ?? 0, 6)}");
+            Report($"  上下文={Num(data is null ? 0 : data.ContextPercent, 1)}%  " +
+                   $"缓存命中率={Num(data is null ? 0 : data.CacheHitRate, 1)}%");
             Report($"  连接={data?.IsConnected}  不完整={data?.IsPartial}  未定价={data?.IsUnpriced}");
 
             // 展开面板，验证尺寸变化后的重定位。
@@ -855,16 +855,16 @@ public partial class App : Application
 
                 Report(string.Empty);
                 Report($"  展开后：IsPanelOpen={_window.IsPanelOpen}  " +
-                       $"面板高度={_window.PanelHeight:F0}");
+                       $"面板高度={Num(_window.PanelHeight)}");
 
                 var expandedSizeMatches = Math.Abs(_window.ActualWidth - Math.Ceiling(expanded.Width)) <= 1
                     && Math.Abs(_window.ActualHeight - Math.Ceiling(expanded.Height)) <= 1;
 
-                Report($"  展开后内容尺寸={expanded.Width:F1}x{expanded.Height:F1}  " +
-                       $"窗口尺寸={_window.ActualWidth:F0}x{_window.ActualHeight:F0}  " +
+                Report($"  展开后内容尺寸={Num(expanded.Width, 1)}x{Num(expanded.Height, 1)}  " +
+                       $"窗口尺寸={Num(_window.ActualWidth)}x{Num(_window.ActualHeight)}  " +
                        $"尺寸一致={expandedSizeMatches}");
-                Report($"  展开后物理位置=({expandedLeft:F0},{expandedTop:F0})-" +
-                       $"({expandedRight:F0},{expandedBottom:F0})");
+                Report($"  展开后物理位置=({Num(expandedLeft)},{Num(expandedTop)})-" +
+                       $"({Num(expandedRight)},{Num(expandedBottom)})");
                 Report($"  展开后在宿主内={expandedInside}");
 
                 Shutdown();
@@ -883,6 +883,24 @@ public partial class App : Application
     /// 不用控制台：WinExe 子系统不分配控制台，
     /// 且父控制台在重定向场景下 AttachConsole 也不可靠。写文件最稳定。
     /// </remarks>
+    /// <summary>
+    /// 按不变文化格式化诊断输出中的小数。
+    /// </summary>
+    /// <remarks>
+    /// 诊断日志是给人读的调试信息，数字必须是确定形式。
+    /// 在阿拉伯语（ar-SA）或波斯语（fa-IR）区域下，
+    /// 插值里的 <c>$"{x:F0}"</c> 会输出本地数字或 <c>٫</c> 小数点，
+    /// 让日志难以比对。
+    ///
+    /// 用 <see cref="NumberFormatter.Fixed"/> 而不是
+    /// <c>PercentRaw</c>：后者是百分比专用，位数受限（0–2）。
+    /// </remarks>
+    private static string Num(double value, int decimals = 0) =>
+        NumberFormatter.Fixed(value, decimals);
+
+    /// <summary>按不变文化格式化诊断输出中的整数。</summary>
+    private static string Num(long value) => NumberFormatter.Count(value);
+
     private static void Report(string message)
     {
         Debug.WriteLine(message);
@@ -1142,7 +1160,7 @@ public partial class App : Application
             if (_traceFollow)
             {
                 Trace($"  定位：宿主DIP={hostInDip} 目标DIP={placement.Bounds} "
-                    + $"当前DIP=({_window.Left:F0},{_window.Top:F0}) "
+                    + $"当前DIP=({Num(_window.Left)},{Num(_window.Top)}) "
                     + $"可见={_window.IsVisible} 强制={_forcedReposition}");
             }
 

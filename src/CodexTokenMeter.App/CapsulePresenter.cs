@@ -120,18 +120,18 @@ internal static class CapsulePresenter
         CapsuleMetric.CachedInput => new(metric, NumberFormatter.Compact(data.Cumulative.CachedInput),
             "refresh", Tooltip: TooltipLine(metric, NumberFormatter.Full(data.Cumulative.CachedInput))),
 
-        CapsuleMetric.CacheHitRate => new(metric, $"{data.CacheHitRate:F1}%",
-            "percent", Tooltip: TooltipLine(metric, $"{data.CacheHitRate:F2}%")),
+        CapsuleMetric.CacheHitRate => new(metric, NumberFormatter.Percent(data.CacheHitRate, 1),
+            "percent", Tooltip: TooltipLine(metric, NumberFormatter.Percent(data.CacheHitRate, 2))),
 
         CapsuleMetric.TotalCost => new(metric, FormatCost(data.TotalCost),
             "dollar", IsCost: true,
             Tooltip: TooltipLine(metric, data.TotalCost is { } c ? $"${NumberFormatter.Cost(c)}" : "未定价")),
 
         // 上下文占用用圆环呈现，比一个百分比数字更直观。
-        CapsuleMetric.ContextPercent => new(metric, $"{data.ContextPercent:F0}%",
+        CapsuleMetric.ContextPercent => new(metric, NumberFormatter.Percent(data.ContextPercent, 0),
             IconKey: null,
             RingPercent: data.ContextPercent,
-            Tooltip: TooltipLine(metric, $"{data.ContextPercent:F1}%")),
+            Tooltip: TooltipLine(metric, NumberFormatter.Percent(data.ContextPercent, 1))),
 
         CapsuleMetric.ContextTokens => new(metric, NumberFormatter.Compact(data.ContextUsedTokens),
             "gauge", Tooltip: TooltipLine(metric, NumberFormatter.Full(data.ContextUsedTokens))),

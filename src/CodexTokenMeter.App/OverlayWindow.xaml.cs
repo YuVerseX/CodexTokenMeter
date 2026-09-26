@@ -280,8 +280,10 @@ public partial class OverlayWindow : Window
         ModelLabel.Text = data.Model ?? "未知模型";
 
         var duration = data.ActiveDuration;
+        // 无活跃时长时留空，而不是显示「00:00:00」——
+        // 后者看起来像「刚开始」或「统计坏了」。
         DurationLabel.Text = duration > TimeSpan.Zero
-            ? $"{(int)duration.TotalHours:D2}:{duration.Minutes:D2}:{duration.Seconds:D2}"
+            ? NumberFormatter.DurationLong(duration)
             : string.Empty;
 
         // 一个 turn 可能包含几十次调用，只写「本轮」容易被误读为「最近一次调用」。
@@ -314,10 +316,11 @@ public partial class OverlayWindow : Window
         TotalCost.Text = data.TotalCost is { } cost
             ? $"${NumberFormatter.Cost(cost)}"
             : "—";
-        CacheHitRate.Text = $"{data.CacheHitRate:F1}%";
+        CacheHitRate.Text = NumberFormatter.Percent(data.CacheHitRate, 1);
 
         ContextDetail.Text = data.ContextWindowTokens > 0
-            ? $"{data.ContextPercent:F1}% / {NumberFormatter.ContextWindow(data.ContextWindowTokens)}"
+            ? $"{NumberFormatter.Percent(data.ContextPercent, 1)} / "
+                + $"{NumberFormatter.ContextWindow(data.ContextWindowTokens)}"
             : "—";
 
         MessageDetail.Text =
