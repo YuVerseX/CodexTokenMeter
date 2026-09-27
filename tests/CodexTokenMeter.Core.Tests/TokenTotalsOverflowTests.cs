@@ -7,7 +7,7 @@ namespace CodexTokenMeter.Core.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <see cref="TokenTotals.Add"/> 用于逐条累加调用记录。
+/// <see cref="TokenTotals.AddSaturating"/> 用于逐条累加调用记录。
 /// 会话日志里的数值来自外部文件，可能被截断、损坏或恶意构造，
 /// 因此必须确认溢出时不会静默变成负数。
 /// </para>
@@ -18,21 +18,6 @@ namespace CodexTokenMeter.Core.Tests;
 /// </remarks>
 public class TokenTotalsOverflowTests
 {
-    [Fact]
-    public void AddDoesNotProduceNegativeFromOverflow()
-    {
-        // long.MaxValue 再加任意正数会回绕为负。
-        var nearMax = new TokenTotals { Input = long.MaxValue, Total = long.MaxValue };
-        var one = new TokenTotals { Input = 1, Total = 1 };
-
-        var sum = nearMax.Add(one);
-
-        // 记录实际行为：目前会回绕为 long.MinValue。
-        // 这里断言「结果可被检测」而不是静默负数——
-        // 见下方 IsSaturated 的用法。
-        Assert.True(sum.Input < 0, "当前实现会回绕为负数，这正是需要防护的场景。");
-    }
-
     [Fact]
     public void SaturatedTotalsAreDetectable()
     {
@@ -132,5 +117,8 @@ public class TokenTotalsOverflowTests
         var inconsistent = new TokenTotals { Input = 100, CachedInput = 500 };
 
         Assert.Equal(0, inconsistent.UncachedInput);
+
+        var extreme = new TokenTotals { Input = long.MaxValue, CachedInput = long.MinValue };
+        Assert.Equal(long.MaxValue, extreme.UncachedInput);
     }
 }

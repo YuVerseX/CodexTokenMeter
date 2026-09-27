@@ -33,6 +33,9 @@ public sealed record SessionCostSummary
     public required int PricedCount { get; init; }
     public required int TotalCount { get; init; }
 
+    /// <summary>数值异常、无法可靠计价的调用数。</summary>
+    public int InvalidUsageCount { get; init; }
+
     /// <summary>涉及但未收录价格的模型。</summary>
     public required IReadOnlyList<string> UnknownModels { get; init; }
 
@@ -43,7 +46,7 @@ public sealed record SessionCostSummary
     public double RateMultiplier { get; init; } = 1.0;
 
     /// <summary>是否全部调用都已计价。false 表示合计值有遗漏。</summary>
-    public bool IsComplete => PricedCount == TotalCount && UnknownModels.Count == 0;
+    public bool IsComplete => PricedCount == TotalCount && UnknownModels.Count == 0 && InvalidUsageCount == 0;
 
     /// <summary>合计值是否为不完整估算。</summary>
     public bool IsPartial => !IsComplete;
@@ -75,6 +78,7 @@ public static class SessionCostCalculator
         var total = 0d;
         var currentTurnCost = 0d;
         var pricedCount = 0;
+        var invalidUsageCount = 0;
         var unknownModels = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var longContextSeen = false;
 
@@ -82,6 +86,12 @@ public static class SessionCostCalculator
 
         foreach (var record in snapshot.UsageRecords)
         {
+            if (!IsValidUsage(record.Usage))
+            {
+                invalidUsageCount++;
+                continue;
+            }
+
             var model = ResolveModel(snapshot, record);
             var pricing = catalog.Find(model);
 
@@ -95,7 +105,16 @@ public static class SessionCostCalculator
                 continue;
             }
 
-            var cost = CostCalculator.Calculate(pricing, record.Usage, serviceTier, rateMultiplier);
+            CostBreakdown cost;
+            try
+            {
+                cost = CostCalculator.Calculate(pricing, record.Usage, serviceTier, rateMultiplier);
+            }
+            catch (OverflowException)
+            {
+                invalidUsageCount++;
+                continue;
+            }
 
             pricedCount++;
             total += cost.TotalCost;
@@ -108,12 +127,20 @@ public static class SessionCostCalculator
             }
         }
 
+        if (!double.IsFinite(total) || !double.IsFinite(currentTurnCost))
+        {
+            invalidUsageCount++;
+            total = 0;
+            currentTurnCost = 0;
+        }
+
         return new SessionCostSummary
         {
             TotalCost = total,
             CurrentTurnCost = currentTurnCost,
             PricedCount = pricedCount,
             TotalCount = snapshot.UsageRecords.Count,
+            InvalidUsageCount = invalidUsageCount,
             UnknownModels = [.. unknownModels.OrderBy(name => name, StringComparer.OrdinalIgnoreCase)],
             LongContextSeen = longContextSeen,
             RateMultiplier = rateMultiplier,
@@ -125,7 +152,7 @@ public static class SessionCostCalculator
     /// </summary>
     /// <remarks>
     /// turn_context 先于该 turn 内的调用记录写出，因此按 turn id 查找即可。
-    /// 若该 turn 没有上下文记录，回落到会话主导模型。
+    /// 若该 turn 没有上下文记录，则无法可靠确定模型，不猜测价格。
     /// </remarks>
     public static string? ResolveModel(SessionSnapshot snapshot, UsageRecord record)
     {
@@ -135,6 +162,15 @@ public static class SessionCostCalculator
             return turn.Model;
         }
 
-        return snapshot.PrimaryModel;
+        return null;
     }
+
+    private static bool IsValidUsage(TokenUsage usage) =>
+        usage.InputTokens >= 0 && usage.InputTokens < long.MaxValue
+        && usage.CachedInputTokens >= 0 && usage.CachedInputTokens <= usage.InputTokens
+        && usage.CacheWriteInputTokens >= 0
+        && usage.CacheWriteInputTokens <= usage.InputTokens - usage.CachedInputTokens
+        && usage.OutputTokens >= 0 && usage.OutputTokens < long.MaxValue
+        && usage.ReasoningOutputTokens >= 0 && usage.ReasoningOutputTokens <= usage.OutputTokens
+        && usage.TotalTokens >= 0 && usage.TotalTokens < long.MaxValue;
 }

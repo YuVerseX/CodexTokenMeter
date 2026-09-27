@@ -30,7 +30,7 @@ public sealed record PricingLoadResult(
 /// </summary>
 /// <remarks>
 /// <para>
-/// 价格来源为 Sub2API 内置价卡（即上游官方牌价），单位 USD / 1M tokens。
+/// 价格参考 Sub2API 固定快照，单位 USD / 1M tokens，并非实时厂商牌价。
 /// 上游站点可能在此基础上叠加分组倍率，该倍率无法从本地数据推断，
 /// 见 <see cref="CostCalculator.Calculate"/> 的 rateMultiplier 参数。
 /// </para>
@@ -72,7 +72,8 @@ public sealed class PricingCatalog
     public static PricingCatalog CreateDefault() =>
         new(new Dictionary<string, ModelPricing>(StringComparer.OrdinalIgnoreCase)
         {
-            // 以下价格对应 Sub2API 内置价卡，逐项与 2026-09-22 / 2026-09-25 快照一致。
+            // 以下价格在 2026-09-27 与 Sub2API a3eb7ef 快照核对；
+            // Astra 使用其 billing_service.go 后备价，其他项取自价卡资源。
             // 长上下文阈值统一为 272000，触发后整次请求按输入 ×2、输出 ×1.5 计价。
             ["gpt-6-sol"] = new ModelPricing
             {
@@ -116,8 +117,7 @@ public sealed class PricingCatalog
                     OutputMultiplier = 1.5,
                 },
             },
-            // gpt-5.6-sol 的内置价卡停在旧牌价，官方已下调。
-            // 保留旧值以对齐上游；如需按官方现价估算，用覆盖文件改写。
+            // 快照未必等于当下厂商价；按实际账单核对后可用覆盖文件改写。
             ["gpt-5.6-sol"] = new ModelPricing
             {
                 Input = 5,
@@ -159,15 +159,6 @@ public sealed class PricingCatalog
                     InputMultiplier = 2,
                     OutputMultiplier = 1.5,
                 },
-            },
-            // 该标识不在 Sub2API 价卡的键中，此处按 DeepSeek 官方低谷价填入，
-            // 属于推断而非上游确认。峰谷倍率未实现，估算值可能偏低。
-            ["deepseek/deepseek-v4.1-flash"] = new ModelPricing
-            {
-                Input = 0.15,
-                Output = 0.6,
-                CacheRead = 0.003,
-                CacheWrite = 0,
             },
         });
 
@@ -234,9 +225,11 @@ public sealed class PricingCatalog
 
         foreach (var (model, entry) in file.Models)
         {
-            if (string.IsNullOrWhiteSpace(model) || entry is null)
+            if (string.IsNullOrWhiteSpace(model) || entry is null || !entry.IsValid())
             {
-                continue;
+                return new PricingLoadResult(
+                    baseCatalog,
+                    $"价格表包含无效条目，整份覆盖未生效：{Path.GetFileName(path)}（模型：{model}）");
             }
 
             merged[model.Trim()] = entry.ToModelPricing();
@@ -272,21 +265,28 @@ public sealed class PricingCatalog
     /// <summary>单个模型在文件中的表示。</summary>
     internal sealed class PricingEntry
     {
-        public double Input { get; init; }
-        public double Output { get; init; }
-        public double CacheRead { get; init; }
-        public double CacheWrite { get; init; }
+        public double? Input { get; init; }
+        public double? Output { get; init; }
+        public double? CacheRead { get; init; }
+        public double? CacheWrite { get; init; }
         public PriorityEntry? Priority { get; init; }
         public double? FastMultiplier { get; init; }
         public double? FlexMultiplier { get; init; }
         public LongContextEntry? LongContext { get; init; }
 
+        public bool IsValid() =>
+            ValidPrice(Input) && ValidPrice(Output)
+            && ValidPrice(CacheRead) && ValidPrice(CacheWrite)
+            && (Priority is null || Priority.IsValid())
+            && ValidMultiplier(FastMultiplier) && ValidMultiplier(FlexMultiplier)
+            && (LongContext is null || LongContext.IsValid());
+
         public ModelPricing ToModelPricing() => new()
         {
-            Input = Input,
-            Output = Output,
-            CacheRead = CacheRead,
-            CacheWrite = CacheWrite,
+            Input = Input!.Value,
+            Output = Output!.Value,
+            CacheRead = CacheRead!.Value,
+            CacheWrite = CacheWrite!.Value,
             Priority = Priority?.ToPriorityPricing(),
             FastMultiplier = FastMultiplier,
             FlexMultiplier = FlexMultiplier,
@@ -294,37 +294,53 @@ public sealed class PricingCatalog
         };
     }
 
+    private static bool ValidPrice(double? value) =>
+        value is { } number && double.IsFinite(number) && number >= 0;
+
+    private static bool ValidMultiplier(double? value) =>
+        value is null || double.IsFinite(value.Value) && value.Value > 0;
+
     internal sealed class PriorityEntry
     {
-        public double Input { get; init; }
-        public double Output { get; init; }
-        public double CacheRead { get; init; }
-        public double CacheWrite { get; init; }
+        public double? Input { get; init; }
+        public double? Output { get; init; }
+        public double? CacheRead { get; init; }
+        public double? CacheWrite { get; init; }
+
+        public bool IsValid() =>
+            (Input is null || ValidPrice(Input))
+            && (Output is null || ValidPrice(Output))
+            && (CacheRead is null || ValidPrice(CacheRead))
+            && (CacheWrite is null || ValidPrice(CacheWrite));
 
         public PriorityPricing ToPriorityPricing() => new()
         {
-            Input = Input,
-            Output = Output,
-            CacheRead = CacheRead,
-            CacheWrite = CacheWrite,
+            Input = Input.GetValueOrDefault(),
+            Output = Output.GetValueOrDefault(),
+            CacheRead = CacheRead.GetValueOrDefault(),
+            CacheWrite = CacheWrite.GetValueOrDefault(),
         };
     }
 
     internal sealed class LongContextEntry
     {
-        public long InputTokensAbove { get; init; }
-        public double InputMultiplier { get; init; }
+        public long? InputTokensAbove { get; init; }
+        public double? InputMultiplier { get; init; }
 
         [JsonPropertyName("outputMultiplier")]
-        public double OutputMultiplier { get; init; }
+        public double? OutputMultiplier { get; init; }
 
         public bool ThresholdInclusive { get; init; }
 
+        public bool IsValid() =>
+            InputTokensAbove is > 0
+            && ValidPrice(InputMultiplier) && ValidPrice(OutputMultiplier);
+
         public LongContextPricing ToLongContextPricing() => new()
         {
-            InputTokensAbove = InputTokensAbove,
-            InputMultiplier = InputMultiplier,
-            OutputMultiplier = OutputMultiplier,
+            InputTokensAbove = InputTokensAbove!.Value,
+            InputMultiplier = InputMultiplier!.Value,
+            OutputMultiplier = OutputMultiplier!.Value,
             ThresholdInclusive = ThresholdInclusive,
         };
     }

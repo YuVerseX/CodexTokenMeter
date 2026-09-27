@@ -135,7 +135,7 @@ public class SessionMetricsTests
             Total = 60,
         };
 
-        var sum = a.Add(b);
+        var sum = TokenTotals.AddSaturating(a, b);
 
         Assert.Equal(11, sum.Input);
         Assert.Equal(22, sum.CachedInput);

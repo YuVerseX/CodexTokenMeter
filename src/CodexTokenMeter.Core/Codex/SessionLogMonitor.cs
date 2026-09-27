@@ -348,14 +348,14 @@ public sealed class SessionLogMonitor : IDisposable
 
     /// <summary>
     /// 文件末尾无换行的尾段：尝试作为完整行解析，
-    /// 成功則消费，失败则留待文件继续增长。
+    /// 成功则消费，失败则留待文件继续增长。
     /// </summary>
     private void ConsumeTrailingTail()
     {
         var bytes = _pending.GetBuffer().AsSpan(0, (int)_pending.Length);
         var text = Encoding.UTF8.GetString(bytes).Trim();
 
-        if (text.Length == 0 || _accumulator.ConsumeLine(text))
+        if (text.Length == 0 || _accumulator.ConsumeLine(text, countUnreadable: false))
         {
             _pending.SetLength(0);
         }

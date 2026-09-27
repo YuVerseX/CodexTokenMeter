@@ -49,6 +49,7 @@ public partial class App : Application
     private Mutex? _singleInstance;
     private OverlayWindow? _window;
     private OverlayDataProvider? _provider;
+    private OverlayData? _lastRenderedData;
     private TrayIcon? _tray;
     private MouseHook? _mouseHook;
     private DispatcherTimer? _followTimer;
@@ -1224,7 +1225,11 @@ public partial class App : Application
         }
 
         var data = _provider.Current;
-        _window.UpdateData(data);
+        if (!ReferenceEquals(data, _lastRenderedData))
+        {
+            _window.UpdateData(data);
+            _lastRenderedData = data;
+        }
 
         _tray?.UpdateTooltip(BuildTooltip(data));
 
@@ -1296,13 +1301,6 @@ public partial class App : Application
         }
     }
 
-    /// <summary>
-    /// 判定进程是否属于 Codex Desktop。
-    /// </summary>
-    /// <remarks>
-    /// 结果按进程 id 缓存：查询模块路径是开销可观的系统调用，
-    /// 而跟随循环每 60ms 就会枚举一次全部顶层窗口。
-    /// 缓存同时记住进程名，以避免系统复用 PID 时把旧结论误用到新进程上。
     /// <summary>
     /// 已识别的 Codex 进程集合，供跟随循环快速查询。
     /// </summary>

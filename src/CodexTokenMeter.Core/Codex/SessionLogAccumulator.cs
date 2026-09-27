@@ -112,12 +112,14 @@ internal sealed class SessionLogAccumulator
     /// 解析单行并更新状态。
     /// </summary>
     /// <returns>该行是否被识别为合法 JSON 对象。</returns>
-    public bool ConsumeLine(string line)
+    public bool ConsumeLine(string line, bool countUnreadable = true)
     {
         if (line.Length > MaxLineBytes)
         {
-            // 不静默丢弃：计入统计供调用方判断数据完整性。
-            _unreadableLines++;
+            if (countUnreadable)
+            {
+                _unreadableLines++;
+            }
             return false;
         }
 
@@ -128,8 +130,11 @@ internal sealed class SessionLogAccumulator
         }
         catch (JsonException)
         {
-            // 畸形或未知格式的行：跳过，不影响其余解析。
-            _unreadableLines++;
+            // 文件末尾无换行时可能还在写入，只有完整行才计为损坏。
+            if (countUnreadable)
+            {
+                _unreadableLines++;
+            }
             return false;
         }
 
@@ -138,7 +143,10 @@ internal sealed class SessionLogAccumulator
             var root = document.RootElement;
             if (root.ValueKind != JsonValueKind.Object)
             {
-                _unreadableLines++;
+                if (countUnreadable)
+                {
+                    _unreadableLines++;
+                }
                 return false;
             }
 

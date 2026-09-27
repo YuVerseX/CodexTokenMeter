@@ -33,6 +33,9 @@ if (-not $OutputDirectory) {
     $OutputDirectory = Join-Path $repositoryRoot 'artifacts'
 }
 
+$OutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
+[System.IO.Directory]::CreateDirectory($OutputDirectory) | Out-Null
+
 $version = ([xml](Get-Content $projectPath)).Project.PropertyGroup.Version |
     Where-Object { $_ } |
     Select-Object -First 1
@@ -54,14 +57,12 @@ function Publish-Variant {
         [string]$CompressionSetting
     )
 
-    $publishDirectory = Join-Path $OutputDirectory "publish-$RuntimeIdentifier-$Name"
+    $runId = [guid]::NewGuid().ToString('N')
+    $publishDirectory = Join-Path $OutputDirectory "publish-$RuntimeIdentifier-$Name-$runId"
     $archivePath = Join-Path $OutputDirectory "CodexTokenMeter-$RuntimeIdentifier-$Name.zip"
+    $temporaryArchive = Join-Path $OutputDirectory "CodexTokenMeter-$RuntimeIdentifier-$Name-$runId.zip"
 
     Write-Host "── 发布 $Name ──"
-
-    if (Test-Path $publishDirectory) {
-        Remove-Item $publishDirectory -Recurse -Force
-    }
 
     $arguments = @(
         'publish', $projectPath,
@@ -73,29 +74,44 @@ function Publish-Variant {
         "-p:EnableCompressionInSingleFile=$CompressionSetting",
         '-p:DebugType=None',
         '-p:DebugSymbols=false',
-        '-p:ContinuousIntegrationBuild=true'
+        '-p:ContinuousIntegrationBuild=true',
+        '-p:TreatWarningsAsErrors=true'
     )
 
-    & dotnet @arguments
+    try {
+        & dotnet @arguments
 
-    if ($LASTEXITCODE -ne 0) {
-        throw "dotnet publish 失败（$Name）"
+        if ($LASTEXITCODE -ne 0) {
+            throw "dotnet publish 失败（$Name）"
+        }
+
+        Compress-Archive -Path (Join-Path $publishDirectory '*') -DestinationPath $temporaryArchive -CompressionLevel Optimal
+        Move-Item -LiteralPath $temporaryArchive -Destination $archivePath -Force
+
+        $hash = (Get-FileHash $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+        "$hash  $(Split-Path $archivePath -Leaf)" | Set-Content "$archivePath.sha256" -NoNewline
+
+        $size = [Math]::Round((Get-Item $archivePath).Length / 1MB, 2)
+        Write-Host "  归档：$(Split-Path $archivePath -Leaf)  ${size} MB"
+        Write-Host "  校验：$hash"
+        Write-Host ''
     }
+    finally {
+        $expectedPrefix = $OutputDirectory.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+        $absoluteStaging = [System.IO.Path]::GetFullPath($publishDirectory)
 
-    # 生成校验和，便于用户核对下载内容。
-    if (Test-Path $archivePath) {
-        Remove-Item $archivePath -Force
+        if (-not $absoluteStaging.StartsWith($expectedPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "发布临时目录越界，拒绝清理：$absoluteStaging"
+        }
+
+        if (Test-Path -LiteralPath $publishDirectory) {
+            Remove-Item -LiteralPath $publishDirectory -Recurse -Force
+        }
+
+        if (Test-Path -LiteralPath $temporaryArchive) {
+            Remove-Item -LiteralPath $temporaryArchive -Force
+        }
     }
-
-    Compress-Archive -Path (Join-Path $publishDirectory '*') -DestinationPath $archivePath -CompressionLevel Optimal
-
-    $hash = (Get-FileHash $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
-    "$hash  $(Split-Path $archivePath -Leaf)" | Set-Content "$archivePath.sha256" -NoNewline
-
-    $size = [Math]::Round((Get-Item $archivePath).Length / 1MB, 2)
-    Write-Host "  归档：$(Split-Path $archivePath -Leaf)  ${size} MB"
-    Write-Host "  校验：$hash"
-    Write-Host ''
 }
 
 if ($Variant -in @('Standalone', 'Both')) {

@@ -38,7 +38,7 @@ public sealed record OverlaySettings
     public bool AllowDrag { get; init; } = true;
 
     /// <summary>
-    /// 顶部内缩量（物理像素）。
+    /// 顶部内缩量（DIP）。
     /// </summary>
     /// <remarks>
     /// Codex Desktop 是全屏无边框窗口，标题栏由应用自绘，

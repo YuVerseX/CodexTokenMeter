@@ -197,7 +197,7 @@ internal static class CapsulePresenter
 
         var notice = data switch
         {
-            { IsUnpriced: true } => "该模型未收录价格",
+            { IsUnpriced: true } => "部分调用无法可靠计费",
             { IsPartial: true } => "日志尚未读完，数值可能偏低",
             { IsConnected: false } => "未连接 Codex",
             _ => null,

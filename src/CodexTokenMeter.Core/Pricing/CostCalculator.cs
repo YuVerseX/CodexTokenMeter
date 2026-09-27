@@ -19,7 +19,18 @@ public readonly record struct BillingBuckets
     public long OutputTokens { get; init; }
 
     /// <summary>输入侧总量，用于长上下文判定。等于最初的总输入。</summary>
-    public long TotalInputTokens => InputTokens + CacheReadTokens + CacheWriteTokens;
+    public long TotalInputTokens
+    {
+        get
+        {
+            var input = Math.Max(0, InputTokens);
+            var read = Math.Max(0, CacheReadTokens);
+            var write = Math.Max(0, CacheWriteTokens);
+            return input > long.MaxValue - read || input + read > long.MaxValue - write
+                ? long.MaxValue
+                : input + read + write;
+        }
+    }
 
     /// <summary>
     /// 把总量口径的用量拆成互斥桶。
@@ -32,11 +43,10 @@ public readonly record struct BillingBuckets
     {
         ArgumentNullException.ThrowIfNull(usage);
 
-        var cacheRead = Math.Max(0, usage.CachedInputTokens);
-        var cacheWrite = Math.Max(0, usage.CacheWriteInputTokens);
-
-        // 钳制到 0：异常数据可能出现缓存量大于总量，此时净输入归零而非负数。
-        var netInput = Math.Max(0, usage.InputTokens - cacheRead - cacheWrite);
+        var input = Math.Max(0, usage.InputTokens);
+        var cacheRead = Math.Clamp(usage.CachedInputTokens, 0, input);
+        var cacheWrite = Math.Clamp(usage.CacheWriteInputTokens, 0, input - cacheRead);
+        var netInput = input - cacheRead - cacheWrite;
 
         return new BillingBuckets
         {
@@ -113,6 +123,16 @@ public static class CostCalculator
         double rateMultiplier = 1.0)
     {
         ArgumentNullException.ThrowIfNull(pricing);
+
+        if (!IsValidPricing(pricing))
+        {
+            throw new ArgumentOutOfRangeException(nameof(pricing), "价格必须是有效的非负有限数。");
+        }
+
+        if (!double.IsFinite(rateMultiplier) || rateMultiplier <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(rateMultiplier), "倍率必须是有效的正有限数。");
+        }
 
         var buckets = BillingBuckets.From(usage);
         var tier = NormalizeServiceTier(serviceTier);
@@ -196,6 +216,13 @@ public static class CostCalculator
             total *= rateMultiplier;
         }
 
+        if (!double.IsFinite(inputCost) || !double.IsFinite(outputCost)
+            || !double.IsFinite(cacheReadCost) || !double.IsFinite(cacheWriteCost)
+            || !double.IsFinite(total))
+        {
+            throw new OverflowException("费用超出可表示范围。");
+        }
+
         return new CostBreakdown
         {
             InputCost = inputCost,
@@ -240,7 +267,7 @@ public static class CostCalculator
     /// <remarks>
     /// 与 Sub2API 的 <c>QuantizeUsageBillingAmount</c> 一致：
     /// 中点远离零，非有限值与零原样返回。
-    /// 计算过程不做舍入，只在需要展示或对账时使用本方法。
+    /// 计算过程不做舍入；对账需要固定 8 位小数时使用本方法。
     /// </remarks>
     public static double Quantize(double amount)
     {
@@ -251,6 +278,11 @@ public static class CostCalculator
 
         var scale = Math.Pow(10, MonetaryScale);
         var scaled = amount * scale;
+
+        if (!double.IsFinite(scaled))
+        {
+            return amount;
+        }
 
         // 中点远离零，与 decimal.Round(..., MidpointRounding.AwayFromZero) 等价。
         var rounded = scaled >= 0
@@ -316,4 +348,20 @@ public static class CostCalculator
 
     /// <summary>倍率 ≤1 视为未配置，按 1.0 处理。</summary>
     internal static double MultiplierOrOne(double value) => value > 1 ? value : 1.0;
+
+    private static bool IsValidPricing(ModelPricing pricing)
+    {
+        static bool Price(double value) => double.IsFinite(value) && value >= 0;
+        static bool Multiplier(double? value) => value is null || double.IsFinite(value.Value) && value.Value > 0;
+
+        var priority = pricing.Priority;
+        var longContext = pricing.LongContext;
+        return Price(pricing.Input) && Price(pricing.Output)
+            && Price(pricing.CacheRead) && Price(pricing.CacheWrite)
+            && (priority is null || Price(priority.Input) && Price(priority.Output)
+                && Price(priority.CacheRead) && Price(priority.CacheWrite))
+            && Multiplier(pricing.FastMultiplier) && Multiplier(pricing.FlexMultiplier)
+            && (longContext is null || longContext.InputTokensAbove > 0
+                && Price(longContext.InputMultiplier) && Price(longContext.OutputMultiplier));
+    }
 }

@@ -61,7 +61,7 @@ public class CostCalculatorTests
         var buckets = BillingBuckets.From(Usage(input: 100, cached: 500, cacheWrite: 0, output: 0));
 
         Assert.Equal(0, buckets.InputTokens);
-        Assert.Equal(500, buckets.CacheReadTokens);
+        Assert.Equal(100, buckets.CacheReadTokens);
     }
 
     [Fact]
@@ -81,6 +81,26 @@ public class CostCalculatorTests
         Assert.Equal(1000, buckets.InputTokens);
         Assert.Equal(0, buckets.CacheReadTokens);
         Assert.Equal(0, buckets.CacheWriteTokens);
+    }
+
+    [Fact]
+    public void Buckets_CannotOverflowTotalInput()
+    {
+        var buckets = new BillingBuckets
+        {
+            InputTokens = long.MaxValue,
+            CacheReadTokens = long.MaxValue,
+        };
+
+        Assert.Equal(long.MaxValue, buckets.TotalInputTokens);
+    }
+
+    [Fact]
+    public void Calculate_RejectsNonFinitePricing()
+    {
+        var pricing = Gpt6Sol with { Input = double.PositiveInfinity };
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            CostCalculator.Calculate(pricing, Usage(100, 0, 0, 10)));
     }
 
     // ── 算例对照（子代理依据源码推导，已用上游官方公式交叉验证）──
@@ -381,6 +401,12 @@ public class CostCalculatorTests
     {
         var result = CostCalculator.Quantize(value);
         Assert.Equal(value, result);
+    }
+
+    [Fact]
+    public void Quantize_LargeFiniteAmountStaysFinite()
+    {
+        Assert.Equal(1e301, CostCalculator.Quantize(1e301));
     }
 
     [Fact]

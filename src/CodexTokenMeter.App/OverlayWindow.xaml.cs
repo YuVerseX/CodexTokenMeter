@@ -1041,7 +1041,7 @@ public partial class OverlayWindow : Window
             // 饱和值的含义是“日志里的数值异常”，
             // 比“未读完”更值得提醒。
             { IsSaturated: true } => "统计数值异常（已饱和），日志可能损坏",
-            { IsUnpriced: true, Model: { } model } => $"该模型未收录价格，费用不可用：{model}",
+            { IsUnpriced: true } => "部分调用无法可靠计费，费用不可用",
             { IsPartial: true } => "日志尚未读完，数值可能偏低",
             { IsConnected: false } => "未连接 Codex，显示的是最后一次已知数据",
             _ => null,

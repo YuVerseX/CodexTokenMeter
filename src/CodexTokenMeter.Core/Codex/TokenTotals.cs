@@ -35,21 +35,6 @@ public readonly record struct TokenTotals
         Total = usage.TotalTokens,
     };
 
-    /// <summary>逐项相加。用于增量累加，避免每次都重新遍历全部记录。</summary>
-    /// <remarks>
-    /// 不做溢出检查。调用方在累加外部数据时应改用
-    /// <see cref="AddSaturating"/>，见其说明。
-    /// </remarks>
-    public TokenTotals Add(TokenTotals other) => new()
-    {
-        Input = Input + other.Input,
-        CachedInput = CachedInput + other.CachedInput,
-        CacheWriteInput = CacheWriteInput + other.CacheWriteInput,
-        Output = Output + other.Output,
-        ReasoningOutput = ReasoningOutput + other.ReasoningOutput,
-        Total = Total + other.Total,
-    };
-
     /// <summary>
     /// 逐项相加，负数归零且溢出时饱和。
     /// </summary>
@@ -111,7 +96,7 @@ public readonly record struct TokenTotals
     /// 下限取 0：异常数据可能出现缓存量大于输入量的情况，
     /// 此时归零而不是产生负值。
     /// </remarks>
-    public long UncachedInput => Math.Max(0, Input - CachedInput);
+    public long UncachedInput => Math.Max(0, Input) - Math.Clamp(CachedInput, 0, Math.Max(0, Input));
 
     /// <summary>
     /// 缓存命中率，取值 0–100。

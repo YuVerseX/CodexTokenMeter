@@ -10,7 +10,7 @@ root = true
 
 [*]
 charset = utf-8
-end_of_line = crlf
+end_of_line = lf
 insert_final_newline = true
 trim_trailing_whitespace = true
 indent_style = space
@@ -18,6 +18,9 @@ indent_size = 4
 
 [*.{csproj,props,targets,json,xaml,md}]
 indent_size = 2
+
+[*.{csproj,slnx,ps1,psm1}]
+end_of_line = crlf
 
 [*.cs]
 # 中文字符串常量是产品文案的一部分，不是本地化疏漏。

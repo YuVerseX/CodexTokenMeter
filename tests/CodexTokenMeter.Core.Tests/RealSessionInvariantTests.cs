@@ -9,8 +9,7 @@ namespace CodexTokenMeter.Core.Tests;
 /// 它们断言的是数据源之间必须成立的不变量，而不是具体数值。
 /// </summary>
 /// <remarks>
-/// 只验证已稳定的会话文件（见 <c>EnumerateLogs</c>）。
-/// 正在写入的日志会短暂地处于不一致状态，对其断言不成立。
+/// 读取期间变化的文件会跳过；最后一条用量若尚未配对计数，也会跳过相关断言。
 /// </remarks>
 public class RealSessionInvariantTests
 {
@@ -53,8 +52,8 @@ public class RealSessionInvariantTests
     /// 但两份记录尚未配齐（实测该写法仍会偶发失败）。
     /// </para>
     /// <para>
-    /// 改为**内容级一致性**：连读两次，两者完全一致才认为文件已静止。
-    /// 这直接验证了「没有处于写入中间状态」，而不是去推测。
+    /// 连读两次，比较不变量相关字段，排除读取过程中的变化；
+    /// 两次相同并不证明事件已配齐，配对仍由下方的单项断言检查。
     /// 代价是读取次数翻倍；这些测试只在本地有会话日志时运行，可以接受。
     /// </para>
     /// </remarks>
@@ -207,6 +206,15 @@ public class RealSessionInvariantTests
             }
             var latest = snapshot.LatestTokenCount;
             if (latest is null || snapshot.UsageRecords.Count == 0)
+            {
+                continue;
+            }
+
+            // 正在追加的会话可能已经写入下一次 usage，却尚未写出其 count。
+            // 两次读取一致只能证明读取期间静止，不能证明事件已经配齐。
+            if (snapshot.UsageRecords[^1].Timestamp is not { } usageTime
+                || latest.Timestamp is not { } countTime
+                || usageTime > countTime)
             {
                 continue;
             }

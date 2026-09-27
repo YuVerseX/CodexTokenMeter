@@ -78,6 +78,7 @@ public class SessionLogMonitorTests : IDisposable
 
         var duringWrite = monitor.Poll(LogPath);
         Assert.Single(duringWrite.UsageRecords);
+        Assert.Equal(0, duringWrite.UnreadableLineCount);
 
         // 补全该行后，应被正常解析。
         File.AppendAllText(LogPath, partial[(partial.Length / 2)..] + "\n");
@@ -85,6 +86,7 @@ public class SessionLogMonitorTests : IDisposable
         var afterComplete = monitor.Poll(LogPath);
         Assert.Equal(2, afterComplete.UsageRecords.Count);
         Assert.Equal("turn-2", afterComplete.UsageRecords[1].TurnId);
+        Assert.Equal(0, afterComplete.UnreadableLineCount);
     }
 
     [Fact]

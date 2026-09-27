@@ -7,8 +7,8 @@ namespace CodexTokenMeter.Core.Windowing;
 /// Win32 窗口查询与浮层窗口样式设置。
 /// </summary>
 /// <remarks>
-/// 本类是唯一直接调用 Win32 的位置；之上的识别与定位逻辑
-/// 都以纯数据形式实现，便于测试。
+/// 窗口识别与定位使用的 Win32 入口集中在此；鼠标钩子与诊断自检
+/// 分别持有自己的原生入口。
 ///
 /// DLL 搜索路径限制在程序集级别声明，见 <c>AssemblyInfo.cs</c>。
 /// </remarks>

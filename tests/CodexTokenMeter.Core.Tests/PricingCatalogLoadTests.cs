@@ -131,7 +131,7 @@ public class PricingCatalogLoadTests : IDisposable
     }
 
     [Fact]
-    public void ModelKeysAreTrimmedAndWhitespaceOnlyKeysIgnored()
+    public void InvalidModelKeyRejectsWholeOverride()
     {
         var result = PricingCatalog.LoadFrom(WriteFile("""
             {
@@ -142,8 +142,36 @@ public class PricingCatalogLoadTests : IDisposable
             }
             """));
 
-        Assert.Equal(1, result.AppliedModelCount);
-        Assert.NotNull(result.Catalog.Find("spaced-model"));
+        Assert.Equal(0, result.AppliedModelCount);
+        Assert.NotNull(result.Warning);
+        Assert.Null(result.Catalog.Find("spaced-model"));
+    }
+
+    [Theory]
+    [InlineData("{ \"Models\": { \"gpt-6-sol\": { \"Input\": 99 } } }")]
+    [InlineData("{ \"Models\": { \"gpt-6-sol\": { \"Input\": -1, \"Output\": 2, \"CacheRead\": 0, \"CacheWrite\": 0 } } }")]
+    [InlineData("{ \"Models\": { \"gpt-6-sol\": { \"Input\": 1, \"Output\": 2, \"CacheRead\": 0, \"CacheWrite\": 0, \"FastMultiplier\": -2 } } }")]
+    public void InvalidPriceRejectsWholeOverride(string content)
+    {
+        var result = PricingCatalog.LoadFrom(WriteFile(content));
+
+        Assert.False(result.IsClean);
+        Assert.Equal(0, result.AppliedModelCount);
+        Assert.Equal(2, result.Catalog.Find("gpt-6-sol")!.Input);
+    }
+
+    [Fact]
+    public void InvalidSecondEntryDoesNotPartiallyApplyFirst()
+    {
+        var result = PricingCatalog.LoadFrom(WriteFile("""
+            { "Models": {
+                "valid": { "Input": 1, "Output": 2, "CacheRead": 0, "CacheWrite": 0 },
+                "invalid": { "Input": 1 }
+            } }
+            """));
+
+        Assert.Equal(0, result.AppliedModelCount);
+        Assert.Null(result.Catalog.Find("valid"));
     }
 
     [Fact]

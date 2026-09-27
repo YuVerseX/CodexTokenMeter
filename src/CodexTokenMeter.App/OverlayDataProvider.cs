@@ -125,6 +125,8 @@ public sealed class OverlayDataProvider : IDisposable
 
     private string? _activeThreadId;
     private string? _activeLogPath;
+    private SessionSnapshot? _pricedSnapshot;
+    private SessionCostSummary? _pricedCost;
     private OverlayData _current = OverlayData.Empty;
     private bool _disposed;
 
@@ -174,45 +176,67 @@ public sealed class OverlayDataProvider : IDisposable
     /// </summary>
     public void Poll()
     {
+        var changed = false;
+
         lock (_sync)
         {
             if (_disposed)
             {
                 return;
             }
+
+            var data = BuildData();
+            if (_current != data)
+            {
+                _current = data;
+                changed = true;
+            }
         }
 
+        if (changed)
+        {
+            DataChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    private OverlayData BuildData()
+    {
         var status = _ipc.GetStatus();
         var threadId = status.ActiveConversationId;
 
         if (threadId is null)
         {
-            Update(new OverlayData
+            return new OverlayData
             {
                 IsConnected = status.IsConnected,
                 PricingWarning = _pricingWarning,
-            });
-            return;
+            };
         }
 
         var logPath = ResolveLogPath(threadId);
         if (logPath is null)
         {
             // 会话日志尚未落盘，或该会话不是根会话。
-            Update(new OverlayData
+            return new OverlayData
             {
                 ThreadId = threadId,
                 IsConnected = status.IsConnected,
                 PricingWarning = _pricingWarning,
-            });
-            return;
+            };
         }
 
         var snapshot = _logMonitor.Poll(logPath);
         var metrics = SessionMetrics.Create(snapshot);
-        var cost = SessionCostCalculator.Calculate(snapshot, _catalog, rateMultiplier: _rateMultiplier);
+        if (!ReferenceEquals(snapshot, _pricedSnapshot))
+        {
+            _pricedCost = SessionCostCalculator.Calculate(snapshot, _catalog, rateMultiplier: _rateMultiplier);
+            _pricedSnapshot = snapshot;
+        }
 
-        Update(new OverlayData
+        var cost = _pricedCost!;
+        var hasCompleteCost = cost.TotalCount > 0 && cost.IsComplete;
+
+        return new OverlayData
         {
             ThreadId = threadId,
             LogPath = logPath,
@@ -223,8 +247,8 @@ public sealed class OverlayDataProvider : IDisposable
             CurrentTurnCalls = snapshot.CurrentTurnCallCount,
             ContextUsedTokens = metrics.ContextUsedTokens,
             ContextWindowTokens = metrics.ContextWindowTokens,
-            TotalCost = cost.IsComplete ? cost.TotalCost : null,
-            CurrentTurnCost = cost.IsComplete ? cost.CurrentTurnCost : null,
+            TotalCost = hasCompleteCost ? cost.TotalCost : null,
+            CurrentTurnCost = hasCompleteCost ? cost.CurrentTurnCost : null,
             UserMessageCount = snapshot.UserMessageCount,
             AssistantMessageCount = snapshot.AssistantMessageCount,
             ToolCallCount = snapshot.ToolCallCount,
@@ -232,11 +256,11 @@ public sealed class OverlayDataProvider : IDisposable
             ActiveDuration = metrics.ActiveDuration,
             CompactionCount = snapshot.CompactionCount,
             IsPartial = metrics.IsPartial,
-            IsUnpriced = cost.UnknownModels.Count > 0 || cost.TotalCount == 0,
+            IsUnpriced = cost.TotalCount > 0 && !cost.IsComplete,
             IsSaturated = metrics.Cumulative.IsSaturated || metrics.CurrentTurn.IsSaturated,
             IsConnected = status.IsConnected,
             PricingWarning = _pricingWarning,
-        });
+        };
     }
 
     /// <summary>
@@ -251,19 +275,23 @@ public sealed class OverlayDataProvider : IDisposable
     {
         lock (_sync)
         {
+            if (_disposed)
+            {
+                return;
+            }
+
             _activeThreadId = null;
             _activeLogPath = null;
+            _pricedSnapshot = null;
+            _pricedCost = null;
             _logMonitor.Reset();
+            _locator.Invalidate();
         }
-
-        _locator.Invalidate();
     }
 
     public void Dispose()
     {
-        // 在锁内置位，与 Poll 的检查互斥：
-        // 否则 Poll 可能在检查之后、取得锁之前被 Dispose 超前，
-        // 随后对已释放的监视器调用 Poll 而抛 ObjectDisposedException。
+        // Poll 整体持锁；释放监视器也必须在同一锁内完成。
         lock (_sync)
         {
             if (_disposed)
@@ -272,14 +300,13 @@ public sealed class OverlayDataProvider : IDisposable
             }
 
             _disposed = true;
+            _logMonitor.Dispose();
+            _pricedSnapshot = null;
+            _pricedCost = null;
         }
 
         _ipc.StatusChanged -= OnIpcStatusChanged;
         _ipc.Dispose();
-
-        // 日志监视器持有可增长的待处理缓冲（上限约 4 MB），
-        // 不释放会一直保留到进程退出。
-        _logMonitor.Dispose();
     }
 
     private void OnIpcStatusChanged(object? sender, EventArgs e)
@@ -289,25 +316,6 @@ public sealed class OverlayDataProvider : IDisposable
         // 本方法在 IPC 的后台线程上被调用（见 CodexIpcMonitor 的说明），
         // 因此这里只发通知，不做任何读取或 UI 操作。
         DataChanged?.Invoke(this, EventArgs.Empty);
-    }
-
-    private void Update(OverlayData data)
-    {
-        var changed = false;
-
-        lock (_sync)
-        {
-            if (!IsEquivalent(_current, data))
-            {
-                _current = data;
-                changed = true;
-            }
-        }
-
-        if (changed)
-        {
-            DataChanged?.Invoke(this, EventArgs.Empty);
-        }
     }
 
     /// <summary>
@@ -414,22 +422,5 @@ public sealed class OverlayDataProvider : IDisposable
 
     /// <summary>下一次允许复查的时间点（已找到后）。</summary>
     private long _nextResolveAllowedAt;
-
-    /// <summary>
-    /// 判断两份数据是否等价，避免无变化时反复通知 UI。
-    /// </summary>
-    private static bool IsEquivalent(OverlayData left, OverlayData right) =>
-        left.ThreadId == right.ThreadId
-        && left.LogPath == right.LogPath
-        && left.Model == right.Model
-        && left.Cumulative == right.Cumulative
-        && left.CurrentTurn == right.CurrentTurn
-        && left.ContextUsedTokens == right.ContextUsedTokens
-        && left.IsConnected == right.IsConnected
-        && left.IsPartial == right.IsPartial
-        && left.UserMessageCount == right.UserMessageCount
-        && left.AssistantMessageCount == right.AssistantMessageCount
-        && left.ToolCallCount == right.ToolCallCount
-        && left.CompactionCount == right.CompactionCount;
 }
 
