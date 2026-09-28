@@ -1,0 +1,98 @@
+# 持续集成：验证源码可构建、测试通过、格式与依赖无问题。
+#
+# 只跑 Windows 运行器：本项目是 net10.0-windows + WPF，
+# 依赖 Win32 窗口 API 与命名管道，Linux/macOS 上无法构建。
+#
+# 步骤与 README「从源码验证与打包」一节保持一致，
+# 让本地验收命令与 CI 判定标准不会各自演化。
+#
+# 注意：run 块内一律只写 ASCII。
+# GitHub Actions 在 Windows 上把 run 内容写成**无 BOM 的 UTF-8**临时脚本
+# （见 actions/runner 的 ScriptHandler），而 Windows PowerShell 5.1 对
+# 无 BOM 文件按系统 ANSI 代码页解码。脚本里出现中文时，
+# 5.1 下会因解码错位而报语法错误——正是 Publish-App.ps1 曾经踩过的坑。
+# 中文只出现在 YAML 注释与步骤名里（YAML 本身按 UTF-8 解析）。
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# 同一分支上的新推送取消上一次未完成的运行，避免排队。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+
+jobs:
+  build-and-test:
+    name: 构建与测试
+    runs-on: windows-latest
+
+    # 浮层相关的测试要等命名管道与计时，给足余量；
+    # 设上限是为了让卡死的运行尽快失败，而不是耗到默认的 6 小时。
+    timeout-minutes: 20
+
+    steps:
+      - name: 检出源码
+        uses: actions/checkout@v4
+
+      # 仓库不写 global.json，因此这里显式指定 SDK 主版本，
+      # 避免运行器镜像更新时悄悄换用另一个大版本。
+      - name: 安装 .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: 显示 SDK 信息
+        run: dotnet --info
+
+      - name: 还原
+        run: dotnet restore CodexTokenMeter.slnx
+
+      # 仓库把「0 警告」作为验收标准（见 Directory.Build.props），
+      # 但不在项目文件里开启 TreatWarningsAsErrors，以免影响本地开发。
+      # CI 用命令行参数强制，只作用于这里。
+      - name: 构建
+        run: dotnet build CodexTokenMeter.slnx -c Release --no-restore -warnaserror
+
+      - name: 测试
+        run: dotnet test CodexTokenMeter.slnx -c Release --no-build
+
+      - name: 格式检查
+        run: dotnet format CodexTokenMeter.slnx --verify-no-changes --no-restore
+
+      - name: 依赖漏洞检查
+        run: >
+          dotnet list tests/CodexTokenMeter.Core.Tests/CodexTokenMeter.Core.Tests.csproj
+          package --vulnerable --include-transitive
+
+      # 打包脚本是克隆仓库后最容易被直接调用的入口，它自己必须先跑通。
+      #
+      # 这里显式指定 shell: powershell（Windows PowerShell 5.1）：
+      # Windows 运行器的默认 shell 是 pwsh，而普通用户双击 .ps1
+      # 或在开始菜单打开 PowerShell 拿到的是 5.1。二者对无 BOM 的
+      # UTF-8 脚本解码方式不同，只有 5.1 才能守住这个回归。
+      - name: 打包脚本冒烟测试（Windows PowerShell 5.1）
+        shell: powershell
+        run: ./scripts/Publish-App.ps1 -RuntimeIdentifier win-x64 -Variant Lite -OutputDirectory $env:RUNNER_TEMP/ctm-artifacts
+
+      - name: 校验打包产物与摘要一致
+        shell: powershell
+        run: |
+          $zip = Get-ChildItem "$env:RUNNER_TEMP/ctm-artifacts" -Filter '*.zip'
+          if (-not $zip) { throw "No archive produced." }
+          $recorded = ((Get-Content "$($zip.FullName).sha256" -Raw) -split '\s+')[0]
+          $actual = (Get-FileHash $zip.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($recorded -ne $actual) { throw "Checksum mismatch: $recorded vs $actual" }
+          Write-Host "Checksum matches: $actual"

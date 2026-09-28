@@ -1,4 +1,4 @@
-# 以给定运行时标识发布浮层。
+﻿# 以给定运行时标识发布浮层。
 #
 # 用法：
 #   .\scripts\Publish-App.ps1 -RuntimeIdentifier win-x64 -Variant Both
