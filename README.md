@@ -12,8 +12,13 @@
 解压包后运行 `CodexTokenMeter.exe`。托盘菜单可以显隐浮层、展开面板、
 选择胶囊指标、设置锚点和退出。浮层只在 Codex 窗口位于前台时显示。
 
-仓库不含可下载的二进制包：`artifacts/` 被 Git 忽略，是本地打包输出目录，
-不是仓库下载入口。请从源码打包，或在正式发布后使用发行版提供的包。
+从 [Releases](https://github.com/YuVerseX/CodexTokenMeter/releases) 下载打包好的
+压缩包；每个包旁附有 `.sha256`，可以自行校验完整性。仓库本身不含二进制包：
+`artifacts/` 被 Git 忽略，是本地打包输出目录，不是下载入口。
+也可以按下一节从源码打包。
+
+程序未做代码签名，Windows 首次运行时可能弹出 SmartScreen 提示（
+“Windows 已保护你的电脑”）。需要先确认文件来源与摘要再选择运行。
 
 ## 从源码验证与打包
 

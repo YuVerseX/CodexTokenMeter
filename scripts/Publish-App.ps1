@@ -85,6 +85,17 @@ function Publish-Variant {
             throw "dotnet publish 失败（$Name）"
         }
 
+        # MIT 要求分发副本时随附版权与许可声明。
+        # 单文件发布产物里不含许可文本，因此显式放入包内；
+        # 缺了它就直接失败，而不是发一个许可不完整的包出去。
+        $licensePath = Join-Path $repositoryRoot 'LICENSE'
+
+        if (-not (Test-Path -LiteralPath $licensePath)) {
+            throw "未找到 LICENSE，无法打包：$licensePath"
+        }
+
+        Copy-Item -LiteralPath $licensePath -Destination $publishDirectory -Force
+
         Compress-Archive -Path (Join-Path $publishDirectory '*') -DestinationPath $temporaryArchive -CompressionLevel Optimal
         Move-Item -LiteralPath $temporaryArchive -Destination $archivePath -Force
 

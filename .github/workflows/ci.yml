@@ -87,12 +87,25 @@ jobs:
         shell: powershell
         run: ./scripts/Publish-App.ps1 -RuntimeIdentifier win-x64 -Variant Lite -OutputDirectory $env:RUNNER_TEMP/ctm-artifacts
 
-      - name: 校验打包产物与摘要一致
+      # 除摘要外还断言包内条目：MIT 要求分发副本随附许可声明，
+      # 少了 LICENSE 就直接失败，而不是发一个许可不完整的包出去。
+      - name: 校验打包产物完整性与摘要
         shell: powershell
         run: |
           $zip = Get-ChildItem "$env:RUNNER_TEMP/ctm-artifacts" -Filter '*.zip'
           if (-not $zip) { throw "No archive produced." }
-          $recorded = ((Get-Content "$($zip.FullName).sha256" -Raw) -split '\s+')[0]
+
           $actual = (Get-FileHash $zip.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $recorded = ((Get-Content "$($zip.FullName).sha256" -Raw) -split '\s+')[0]
           if ($recorded -ne $actual) { throw "Checksum mismatch: $recorded vs $actual" }
-          Write-Host "Checksum matches: $actual"
+
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = [System.IO.Compression.ZipFile]::OpenRead($zip.FullName)
+          try { $entries = @($archive.Entries | ForEach-Object { $_.FullName }) }
+          finally { $archive.Dispose() }
+
+          foreach ($required in @('CodexTokenMeter.exe', 'LICENSE')) {
+            if ($entries -notcontains $required) { throw "Missing entry: $required" }
+          }
+
+          Write-Host ("Checksum matches and entries present: " + $actual)
